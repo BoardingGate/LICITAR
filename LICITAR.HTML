@@ -37,6 +37,12 @@
       .fade-in { animation: fadeIn 0.3s ease-in-out; }
       @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       .step-line { position: absolute; left: 15px; top: 40px; bottom: 0; width: 2px; background: #334155; z-index: 0; }
+      @media print {
+        body { background: white; color: black; overflow: visible; height: auto; }
+        .no-print { display: none !important; }
+        .print-only { display: block !important; }
+        .glass-panel { background: white; border: 1px solid #ccc; color: black; box-shadow: none; }
+      }
     </style>
 </head>
 <body>
@@ -91,7 +97,8 @@
         Copy: (p) => <IconBase {...p}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></IconBase>,
         Check: (p) => <IconBase {...p}><polyline points="20 6 9 17 4 12"/></IconBase>,
         ChevronRight: (p) => <IconBase {...p}><polyline points="9 18 15 12 9 6"/></IconBase>,
-        ChevronDown: (p) => <IconBase {...p}><polyline points="6 9 12 15 18 9"/></IconBase>
+        ChevronDown: (p) => <IconBase {...p}><polyline points="6 9 12 15 18 9"/></IconBase>,
+        Printer: (p) => <IconBase {...p}><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></IconBase>
       };
 
       const CopyBtn = ({ text }) => {
@@ -156,6 +163,56 @@
                  tx.oncomplete = res;
              });
           }
+      };
+
+      const askAIStrategy = async (apiKey, analysis, type) => {
+          const savedModel = window.localStorage.getItem('gemini_model');
+          const MODEL = savedModel ? JSON.parse(savedModel) : "gemini-1.5-flash"; 
+          
+          let prompt = "";
+          if (type === 'economic') {
+              prompt = `
+                Actúa como un experto Consultor de Licitaciones y Analista de Costes.
+                Analiza el siguiente resumen de la licitación y sugiere una estrategia de PRECIOS y BAJA (descuento) adecuada al mercado actual.
+                
+                DATOS:
+                Objeto: ${analysis.resumen_ejecutivo.objeto_detallado}
+                CPV: ${analysis.resumen_ejecutivo.cpv}
+                Presupuesto Base: ${analysis.datos_economicos.pbl_sin_iva}
+                Lugar: ${analysis.resumen_ejecutivo.localizacion}
+                
+                RESPUESTA ESPERADA (Formato corto y directo):
+                1. Riesgo estimado del contrato (Bajo/Medio/Alto) y por qué.
+                2. Rango de Baja Temeraria estimada (aprox).
+                3. Baja recomendada Conservadora (para asegurar no perder dinero).
+                4. Baja recomendada Agresiva (para ir a ganar, asumiendo riesgo).
+                5. Tips rápidos de optimización de costes para este tipo de obra/servicio.
+              `;
+          } else if (type === 'technical') {
+              prompt = `
+                Actúa como un Ingeniero Jefe de Licitaciones.
+                Analiza el objeto del contrato y sugiere 3 MEJORAS TÉCNICAS o aportaciones de valor que suelen puntuar alto en este tipo de licitaciones (Juicio de Valor).
+                
+                DATOS:
+                Objeto: ${analysis.resumen_ejecutivo.objeto_detallado}
+                CPV: ${analysis.resumen_ejecutivo.cpv}
+                Criterios Juicio Valor: ${JSON.stringify(analysis.criterios_adjudicacion.juicio_valor)}
+                
+                RESPUESTA ESPERADA:
+                Lista 3 mejoras concretas, justificando brevemente por qué aportan valor al órgano de contratación.
+              `;
+          }
+
+          try {
+              const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+              });
+              if(!res.ok) throw new Error("Error API");
+              const data = await res.json();
+              return data.candidates?.[0]?.content?.parts?.[0]?.text || "No se pudo obtener consejo.";
+          } catch(e) { return "Error consultando a la IA: " + e.message; }
       };
 
       const analyzeTenderDocuments = async (apiKey, textContext) => {
@@ -267,13 +324,10 @@
           t += "3. REQUISITOS DE SOLVENCIA Y ADMISIÓN\n";
           t += div;
           t += `CLASIFICACIÓN EXIGIDA:    ${analysis.requisitos_admision?.clasificacion_exigida || 'NO SE REQUIERE'}\n\n`;
-          
           t += "SOLVENCIA TÉCNICA REQUERIDA:\n";
           t += `${analysis.requisitos_admision?.solvencia_tecnica || 'Según lo establecido en el PCAP.'}\n\n`;
-          
           t += "SOLVENCIA ECONÓMICA REQUERIDA:\n";
           t += `${analysis.requisitos_admision?.solvencia_economica || 'Según lo establecido en el PCAP.'}\n\n`;
-          
           t += `GARANTÍA PROVISIONAL:     ${analysis.requisitos_admision?.garantia_provisional || 'NO'}\n`;
           t += `ADSCRIPCIÓN DE MEDIOS:    ${analysis.requisitos_admision?.adscripcion_medios || 'Ver pliegos'}\n\n\n`;
 
@@ -287,7 +341,6 @@
               });
               t += "\n";
           }
-          
           if(analysis.criterios_adjudicacion?.juicio_valor?.length > 0){
               t += "B) CRITERIOS DEPENDIENTES DE JUICIO DE VALOR (MEMORIA TÉCNICA):\n";
               analysis.criterios_adjudicacion.juicio_valor.forEach(c => {
@@ -302,8 +355,6 @@
           t += div;
           if(analysis.condiciones_especiales?.subcontratacion) t += `SUBCONTRATACIÓN: ${analysis.condiciones_especiales.subcontratacion}\n`;
           if(analysis.condiciones_especiales?.penalidades) t += `PENALIDADES: ${analysis.condiciones_especiales.penalidades}\n`;
-          t += "\n";
-          t += bigDiv;
           
           return t;
       };
@@ -389,7 +440,7 @@
           };
 
           return (
-              <div className="h-full p-6 flex flex-col items-center justify-start fade-in overflow-y-auto">
+              <div className="h-full p-6 flex flex-col items-center justify-start fade-in overflow-y-auto no-print">
                   <div className="max-w-2xl w-full bg-slate-900/80 border border-slate-800 rounded-2xl p-8 shadow-2xl mb-8">
                       <div className="flex items-center gap-4 mb-6 border-b border-slate-700 pb-4">
                           <div className="p-3 bg-purple-500/20 rounded-xl text-purple-400"><Icons.BrainCircuit size={32} /></div>
@@ -505,9 +556,9 @@
           
           const handleSave = async () => {
               if(!form.name) { showModal('Error', 'El nombre es obligatorio', 'danger'); return; }
-              await dbActions.put(DB_STORES.COMPANIES, null, form);
-              const all = await dbActions.getAll(DB_STORES.COMPANIES);
-              setCompanies(all);
+              const newC = { ...form, id: form.id || Date.now() };
+              await dbActions.put(DB_STORES.COMPANIES, null, newC);
+              setCompanies(await dbActions.getAll(DB_STORES.COMPANIES));
               setMode('list');
           };
 
@@ -559,10 +610,10 @@
           };
 
           if(mode === 'edit') return (
-              <div className="p-6 h-full overflow-y-auto">
+              <div className="p-6 h-full overflow-y-auto no-print">
                   <div className="max-w-4xl mx-auto glass-panel p-8 rounded-2xl">
                       <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
-                          <h2 className="text-2xl font-display font-bold text-white flex items-center gap-2"><Icons.Building className="text-blue-500"/> {form.name ? 'Editar Empresa' : 'Nueva Empresa'}</h2>
+                          <h2 className="text-2xl font-display font-bold text-white flex items-center gap-2"><Icons.Building className="text-blue-500"/> {form.id ? 'Editar Empresa' : 'Nueva Empresa'}</h2>
                           <button onClick={() => setMode('list')} className="text-sm text-slate-400 hover:text-white">Cancelar</button>
                       </div>
                       
@@ -632,6 +683,42 @@
                   </div>
               </div>
           );
+
+          return (
+              <div className="p-6 h-full flex flex-col no-print">
+                  <div className="flex justify-between items-center mb-8">
+                      <h2 className="text-3xl font-display font-bold text-white tracking-tight">Mis Empresas</h2>
+                      <button onClick={()=>handleEdit(null)} className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2 shadow-lg"><Icons.Plus/> Nueva Empresa</button>
+                  </div>
+                  
+                  {companies.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-64 text-slate-500">
+                          <Icons.Building size={48} className="mb-4 opacity-50"/>
+                          <p>No tienes empresas registradas.</p>
+                      </div>
+                  ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-20">
+                          {companies.map(c => (
+                              <div key={c.id} className="glass-panel p-6 rounded-2xl group relative hover:border-blue-500/50 transition-colors">
+                                  <div className="flex justify-between items-start mb-4">
+                                      <div className="p-3 bg-blue-500/10 rounded-xl text-blue-400"><Icons.Building size={24}/></div>
+                                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                          <button onClick={()=>handleEdit(c)} className="p-2 hover:bg-slate-700 rounded text-blue-300"><Icons.Settings size={16}/></button>
+                                          <button onClick={()=>handleDeleteRequest(c.id)} className="p-2 hover:bg-slate-700 rounded text-red-400"><Icons.Trash2 size={16}/></button>
+                                      </div>
+                                  </div>
+                                  <h3 className="text-xl font-bold text-white mb-1 truncate">{c.name}</h3>
+                                  <p className="text-xs text-slate-400 mb-4 font-mono">{c.cif}</p>
+                                  <div className="space-y-2">
+                                      <div className="text-xs bg-slate-800/50 p-2 rounded flex justify-between"><span>Clasificación:</span> <span className="text-white font-bold">{c.classification || '-'}</span></div>
+                                      <div className="text-xs bg-slate-800/50 p-2 rounded flex justify-between"><span>Docs Guardados:</span> <span className="text-white font-bold">{c.recurringDocs?.length || 0}</span></div>
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  )}
+              </div>
+          );
       };
 
       const Workspace = ({ tender, onBack, apiKey, companies, showModal }) => {
@@ -648,9 +735,22 @@
           const [reportVisible, setReportVisible] = useState(false);
           const [offerStep, setOfferStep] = useState(0);
 
+          const [aiAdvice, setAiAdvice] = useState({ economic: '', technical: '' });
+          const [loadingAdvice, setLoadingAdvice] = useState(false);
+
+          const [envelopeFiles, setEnvelopeFiles] = useState({ A: [], B: [], C: [] });
+
           useEffect(() => {
-              dbActions.put(DB_STORES.TENDERS, null, localTender);
-          }, [localTender]);
+              if (localTender.envelopeFiles) {
+                  setEnvelopeFiles(localTender.envelopeFiles);
+              }
+          }, []);
+
+          useEffect(() => {
+              const updatedTender = { ...localTender, envelopeFiles };
+              setLocalTender(updatedTender);
+              dbActions.put(DB_STORES.TENDERS, null, updatedTender);
+          }, [envelopeFiles]);
 
           const pbl = localTender.analysis?.datos_economicos?.pbl_sin_iva || 0;
           
@@ -690,6 +790,26 @@
               finally { setPdfProcessing(false); }
           };
 
+          const handleEnvelopeUpload = async (e, envelopeType) => {
+              const file = e.target.files[0];
+              if (!file) return;
+              const fileId = `env_${envelopeType}_${Date.now()}`;
+              await dbActions.put(DB_STORES.FILES, fileId, file);
+              
+              setEnvelopeFiles(prev => ({
+                  ...prev,
+                  [envelopeType]: [...prev[envelopeType], { id: fileId, name: file.name }]
+              }));
+          };
+
+          const deleteEnvelopeFile = async (envelopeType, idx) => {
+             const fileId = envelopeFiles[envelopeType][idx].id;
+             await dbActions.del(DB_STORES.FILES, fileId);
+             const newList = [...envelopeFiles[envelopeType]];
+             newList.splice(idx, 1);
+             setEnvelopeFiles(prev => ({ ...prev, [envelopeType]: newList }));
+          };
+
           const handleDeleteFile = async (idx) => {
               const f = localTender.files[idx];
               await dbActions.del(DB_STORES.FILES, f.id);
@@ -709,6 +829,14 @@
                   setActiveTab(2);
               } catch(e) { showModal('Error IA', e.message, 'danger'); }
               finally { setIsAnalyzing(false); }
+          };
+
+          const getAdvice = async (type) => {
+              if(!apiKey) { showModal('Error', 'Necesitas API Key', 'danger'); return; }
+              setLoadingAdvice(true);
+              const txt = await askAIStrategy(apiKey, localTender.analysis, type);
+              setAiAdvice(prev => ({ ...prev, [type]: txt }));
+              setLoadingAdvice(false);
           };
           
           const handleDownloadDoc = async (fileId, name) => {
@@ -771,16 +899,16 @@
               );
 
               return (
-                  <div className="max-w-4xl mx-auto space-y-6 pb-20 fade-in">
+                  <div className="max-w-4xl mx-auto space-y-6 pb-20 fade-in no-print">
                       <div className="bg-gradient-to-r from-blue-900/40 to-slate-900 border border-blue-500/30 p-6 rounded-2xl flex items-start gap-4">
                           <div className="bg-blue-600 p-3 rounded-full shadow-lg shadow-blue-500/30">
                               <Icons.BrainCircuit size={32} className="text-white"/>
                           </div>
                           <div>
-                              <h3 className="text-xl font-bold text-white mb-2">Asistente de Licitación</h3>
+                              <h3 className="text-xl font-bold text-white mb-2">Asistente de Licitación "Llave en Mano"</h3>
                               <p className="text-slate-300 text-sm leading-relaxed">
-                                  Hola. Soy tu Bid Manager virtual. He estudiado el pliego de <strong>{localTender.analysis.resumen_ejecutivo.organismo}</strong>. 
-                                  Vamos a preparar esta oferta paso a paso para asegurar que no falta nada. Sigue mis indicaciones.
+                                  Hola. Soy tu Bid Manager. Te guiaré paso a paso para construir la oferta perfecta. 
+                                  Puedes adjuntar archivos locales a cada sobre, generar documentos y consultar a la IA para mejorar tu estrategia técnica y económica.
                               </p>
                           </div>
                       </div>
@@ -819,7 +947,17 @@
                                                   }
                                               </p>
                                           </div>
-                                          <p className="text-sm text-slate-400">Antes de preparar documentos, confirma que cumples la clasificación exigida: <strong className="text-white">{localTender.analysis.requisitos_admision?.clasificacion_exigida || 'No exigida'}</strong>.</p>
+                                          
+                                          <div className="bg-slate-800 p-4 rounded-lg">
+                                              <div className="flex justify-between items-center mb-2">
+                                                 <h5 className="font-bold text-white text-sm flex items-center gap-2"><Icons.BrainCircuit size={16}/> Análisis de Riesgos y Estrategia</h5>
+                                                 <button onClick={()=>getAdvice('economic')} className="text-xs bg-blue-600 px-3 py-1 rounded text-white font-bold hover:bg-blue-500">{loadingAdvice ? <Icons.Loader/> : 'Consultar a la IA'}</button>
+                                              </div>
+                                              <div className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">
+                                                  {aiAdvice.economic || "Pulsa el botón para que la IA analice el mercado, estime la baja temeraria y sugiera una estrategia de precios ganadora."}
+                                              </div>
+                                          </div>
+
                                           <div className="flex justify-end">
                                               <button onClick={()=>setOfferStep(1)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Continuar al Sobre A &rarr;</button>
                                           </div>
@@ -835,48 +973,36 @@
                               </div>
                               <div className="glass-panel rounded-xl overflow-hidden">
                                   <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex justify-between cursor-pointer" onClick={()=>setOfferStep(1)}>
-                                      <h4 className="font-bold text-white">Sobre A: Documentación Administrativa</h4>
+                                      <h4 className="font-bold text-white">Sobre A: Administrativo</h4>
                                       {offerStep === 1 ? <Icons.ChevronDown/> : <Icons.ChevronRight/>}
                                   </div>
                                   {offerStep === 1 && (
                                       <div className="p-6 space-y-4">
-                                          <p className="text-sm text-slate-300">Este es el sobre de la capacidad y solvencia. Debes preparar los siguientes documentos:</p>
-                                          <ul className="space-y-3">
-                                              <li className="flex items-start gap-3 bg-slate-800 p-3 rounded">
-                                                  <div className="mt-1"><Icons.FileText size={16} className="text-yellow-400"/></div>
-                                                  <div className="text-sm">
-                                                      <strong className="text-white block">DEUC (Documento Europeo Único de Contratación)</strong>
-                                                      <span className="text-slate-400 text-xs">Obligatorio. Debes rellenarlo en la plataforma oficial o adjuntar el XML/PDF firmado.</span>
-                                                  </div>
-                                              </li>
-                                              {localTender.analysis.requisitos_admision?.garantia_provisional && localTender.analysis.requisitos_admision.garantia_provisional.toLowerCase().includes('no') === false && (
-                                                  <li className="flex items-start gap-3 bg-slate-800 p-3 rounded">
-                                                      <div className="mt-1"><Icons.AlertTriangle size={16} className="text-red-400"/></div>
-                                                      <div className="text-sm">
-                                                          <strong className="text-white block">Resguardo de Garantía Provisional</strong>
-                                                          <span className="text-slate-400 text-xs">Atención: El pliego exige garantía: {localTender.analysis.requisitos_admision.garantia_provisional}. Debes constituirla antes de licitar.</span>
-                                                      </div>
-                                                  </li>
-                                              )}
-                                              <li className="flex items-start gap-3 bg-slate-800 p-3 rounded">
-                                                  <div className="mt-1"><Icons.Archive size={16} className="text-blue-400"/></div>
-                                                  <div className="text-sm w-full">
-                                                      <strong className="text-white block">Documentación General de la Empresa</strong>
-                                                      <span className="text-slate-400 text-xs block mb-2">Escrituras, Poderes, NIF, Certificados SS y Hacienda.</span>
-                                                      {selectedCompanyId ? (
-                                                          <div className="grid grid-cols-1 gap-2">
-                                                              {companies.find(c=>c.id == selectedCompanyId).recurringDocs.map((doc, i) => (
-                                                                  <div key={i} className="flex justify-between items-center bg-black/30 p-2 rounded border border-slate-700">
-                                                                      <span className="text-xs text-slate-300 truncate">{doc.name}</span>
-                                                                      <button onClick={()=>handleDownloadDoc(doc.fileId, doc.fileName)} className="text-blue-400 text-xs font-bold hover:underline">Descargar</button>
-                                                                  </div>
-                                                              ))}
-                                                              {companies.find(c=>c.id == selectedCompanyId).recurringDocs.length === 0 && <span className="text-xs text-slate-500 italic">No tienes documentos guardados en esta empresa.</span>}
+                                          <p className="text-sm text-slate-300">Este es el sobre de la capacidad y solvencia. Debes preparar y adjuntar aquí los documentos finales.</p>
+                                          
+                                          {/* File Manager A */}
+                                          <div className="bg-slate-900 p-4 rounded border border-slate-700">
+                                              <div className="flex justify-between items-center mb-2">
+                                                  <span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre A</span>
+                                                  <label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1">
+                                                      <Icons.Plus size={12}/> Adjuntar Archivo
+                                                      <input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'A')} />
+                                                  </label>
+                                              </div>
+                                              {envelopeFiles.A.length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos (Ej: DEUC, Escrituras, Garantía).</p>}
+                                              <div className="space-y-1">
+                                                  {envelopeFiles.A.map((f, idx) => (
+                                                      <div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded">
+                                                          <span className="text-xs text-slate-300">{f.name}</span>
+                                                          <div className="flex gap-2">
+                                                              <button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button>
+                                                              <button onClick={()=>deleteEnvelopeFile('A', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button>
                                                           </div>
-                                                      ) : <span className="text-red-400 text-xs">Selecciona una empresa arriba para ver sus documentos.</span>}
-                                                  </div>
-                                              </li>
-                                          </ul>
+                                                      </div>
+                                                  ))}
+                                              </div>
+                                          </div>
+                                          
                                           <div className="flex justify-end gap-2">
                                               <button onClick={()=>setOfferStep(2)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Todo listo, ir al Sobre B &rarr;</button>
                                           </div>
@@ -892,30 +1018,44 @@
                               </div>
                               <div className="glass-panel rounded-xl overflow-hidden">
                                   <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex justify-between cursor-pointer" onClick={()=>setOfferStep(2)}>
-                                      <h4 className="font-bold text-white">Sobre B: Juicio de Valor (Técnico)</h4>
+                                      <h4 className="font-bold text-white">Sobre B: Técnico</h4>
                                       {offerStep === 2 ? <Icons.ChevronDown/> : <Icons.ChevronRight/>}
                                   </div>
                                   {offerStep === 2 && (
                                       <div className="p-6 space-y-4">
-                                          <p className="text-sm text-slate-300">Aquí debes aportar la Memoria Técnica. Según mi análisis, los puntos clave a desarrollar son:</p>
+                                          <div className="bg-slate-800 p-4 rounded-lg">
+                                              <div className="flex justify-between items-center mb-2">
+                                                 <h5 className="font-bold text-white text-sm flex items-center gap-2"><Icons.BrainCircuit size={16}/> Ideas de Mejoras Técnicas</h5>
+                                                 <button onClick={()=>getAdvice('technical')} className="text-xs bg-blue-600 px-3 py-1 rounded text-white font-bold hover:bg-blue-500">{loadingAdvice ? <Icons.Loader/> : 'Sugerir Mejoras'}</button>
+                                              </div>
+                                              <div className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">
+                                                  {aiAdvice.technical || "Pulsa para que la IA analice el pliego técnico y sugiera 3 mejoras de alto valor para incluir en tu memoria."}
+                                              </div>
+                                          </div>
                                           
-                                          {localTender.analysis.criterios_adjudicacion?.juicio_valor?.length > 0 ? (
-                                              <div className="space-y-2">
-                                                  {localTender.analysis.criterios_adjudicacion.juicio_valor.map((c, i) => (
-                                                      <div key={i} className="bg-purple-900/10 border-l-4 border-purple-500 p-3 rounded">
-                                                          <div className="flex justify-between font-bold text-white text-sm"><span>{c.descripcion}</span><span className="text-purple-300">{c.puntos} Ptos</span></div>
-                                                          <p className="text-xs text-slate-400 mt-1">{c.contenido_clave || 'Desarrollar según pliego técnico.'}</p>
+                                          {/* File Manager B */}
+                                          <div className="bg-slate-900 p-4 rounded border border-slate-700">
+                                              <div className="flex justify-between items-center mb-2">
+                                                  <span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre B</span>
+                                                  <label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1">
+                                                      <Icons.Plus size={12}/> Adjuntar Archivo
+                                                      <input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'B')} />
+                                                  </label>
+                                              </div>
+                                              {envelopeFiles.B.length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos (Ej: Memoria Técnica, Plan de Trabajo).</p>}
+                                              <div className="space-y-1">
+                                                  {envelopeFiles.B.map((f, idx) => (
+                                                      <div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded">
+                                                          <span className="text-xs text-slate-300">{f.name}</span>
+                                                          <div className="flex gap-2">
+                                                              <button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button>
+                                                              <button onClick={()=>deleteEnvelopeFile('B', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button>
+                                                          </div>
                                                       </div>
                                                   ))}
                                               </div>
-                                          ) : (
-                                              <div className="bg-slate-800 p-4 rounded text-slate-400 text-sm italic">No he detectado criterios de juicio de valor. Es posible que sea subasta pura (solo precio) o estén en los automáticos. Revisa el PCAP.</div>
-                                          )}
-                                          
-                                          <div className="bg-yellow-900/20 p-3 rounded text-xs text-yellow-200 border border-yellow-500/20">
-                                              <strong className="block mb-1"><Icons.AlertTriangle size={12} className="inline"/> CONSEJO EXPERTO:</strong>
-                                              Nunca incluyas datos económicos en este sobre o serás excluido. Asegúrate de que los archivos no superen el tamaño máximo de la plataforma.
                                           </div>
+
                                           <div className="flex justify-end gap-2">
                                               <button onClick={()=>setOfferStep(3)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Documentación Técnica lista &rarr;</button>
                                           </div>
@@ -936,34 +1076,47 @@
                                   </div>
                                   {offerStep === 3 && (
                                       <div className="p-6 space-y-4">
-                                          <p className="text-sm text-slate-300">Llegó el momento de formalizar el precio. Según tus cálculos en la pestaña 3:</p>
-                                          
                                           <div className="grid grid-cols-2 gap-4 bg-slate-900 p-4 rounded-xl border border-slate-700">
-                                              <div>
-                                                  <span className="text-xs text-slate-500 block">PBL (Sin IVA)</span>
-                                                  <span className="text-white font-mono font-bold">{formatCurrency(pbl)}</span>
-                                              </div>
-                                              <div>
-                                                  <span className="text-xs text-slate-500 block">Tu Oferta (Sin IVA)</span>
-                                                  <span className="text-green-400 font-mono font-bold text-lg">{formatCurrency(precioOfertado)}</span>
-                                              </div>
-                                              <div className="col-span-2">
-                                                  <span className="text-xs text-slate-500 block">Baja</span>
-                                                  <span className="text-white font-bold">{baja.toFixed(2)}%</span>
-                                              </div>
+                                              <div><span className="text-xs text-slate-500 block">Tu Oferta (Sin IVA)</span><span className="text-green-400 font-mono font-bold text-lg">{formatCurrency(precioOfertado)}</span></div>
+                                              <div><span className="text-xs text-slate-500 block">Baja</span><span className="text-white font-bold">{baja.toFixed(2)}%</span></div>
                                           </div>
 
                                           <div className="mt-4">
-                                              <h5 className="font-bold text-white text-sm mb-2 flex items-center gap-2"><Icons.FileText size={16}/> Generador de Carta de Proposición</h5>
-                                              <p className="text-xs text-slate-400 mb-2">Copia este texto, pégalo en tu editor, firma digitalmente y súbelo al Sobre C.</p>
+                                              <h5 className="font-bold text-white text-sm mb-2 flex items-center gap-2"><Icons.FileText size={16}/> Carta de Proposición</h5>
                                               <div className="relative group">
-                                                  <div className="absolute top-2 right-2 z-10"><CopyBtn text={generateLetterText()}/></div>
+                                                  <div className="absolute top-2 right-2 z-10 flex gap-2">
+                                                      <button onClick={window.print} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-white" title="Imprimir"><Icons.Printer size={16}/></button>
+                                                      <CopyBtn text={generateLetterText()}/>
+                                                  </div>
                                                   <div className="bg-slate-900 p-4 rounded text-xs text-slate-300 font-mono h-64 overflow-y-auto whitespace-pre-wrap select-all border border-slate-700">
                                                       {generateLetterText()}
                                                   </div>
                                               </div>
                                           </div>
                                           
+                                          {/* File Manager C */}
+                                          <div className="bg-slate-900 p-4 rounded border border-slate-700">
+                                              <div className="flex justify-between items-center mb-2">
+                                                  <span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre C</span>
+                                                  <label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1">
+                                                      <Icons.Plus size={12}/> Adjuntar Archivo
+                                                      <input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'C')} />
+                                                  </label>
+                                              </div>
+                                              {envelopeFiles.C.length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos (Ej: Oferta firmada).</p>}
+                                              <div className="space-y-1">
+                                                  {envelopeFiles.C.map((f, idx) => (
+                                                      <div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded">
+                                                          <span className="text-xs text-slate-300">{f.name}</span>
+                                                          <div className="flex gap-2">
+                                                              <button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button>
+                                                              <button onClick={()=>deleteEnvelopeFile('C', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button>
+                                                          </div>
+                                                      </div>
+                                                  ))}
+                                              </div>
+                                          </div>
+
                                           <div className="flex justify-end gap-2">
                                               <button onClick={()=>setOfferStep(4)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Oferta Generada. Finalizar &rarr;</button>
                                           </div>
@@ -989,19 +1142,39 @@
                                           </div>
                                           <h3 className="text-xl font-bold text-white">¡Estás listo para licitar!</h3>
                                           <p className="text-slate-300 text-sm max-w-md mx-auto">
-                                              Has revisado todos los sobres y generado la documentación. Ahora, accede a la Plataforma de Contratación (PLACSP u autonómica) y sube los archivos.
+                                              Tienes todos los archivos organizados. Usa el botón de imprimir para tener un checklist final.
                                           </p>
-                                          <div className="bg-slate-800 p-4 rounded text-left text-xs text-slate-400 space-y-2 max-w-md mx-auto">
-                                              <p>1. Verifica que tienes instalada la aplicación de <strong>Autofirma</strong>.</p>
-                                              <p>2. Asegúrate de que el PDF de la oferta económica está firmado correctamente.</p>
-                                              <p>3. No esperes al último minuto para subir la huella electrónica.</p>
-                                          </div>
-                                          <button onClick={()=>setOfferStep(0)} className="text-blue-400 text-sm hover:underline mt-4">Reiniciar asistente</button>
+                                          <button onClick={window.print} className="bg-slate-700 hover:bg-slate-600 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 mx-auto">
+                                              <Icons.Printer/> Imprimir Resumen Oferta
+                                          </button>
                                       </div>
                                   )}
                               </div>
                           </div>
 
+                      </div>
+                      
+                      <div className="print-only hidden p-8 bg-white text-black">
+                         <h1 className="text-2xl font-bold mb-4">Resumen de Oferta: {localTender.title}</h1>
+                         <div className="mb-4">
+                             <strong>Empresa:</strong> {selectedCompanyId ? companies.find(c=>c.id==selectedCompanyId).name : 'No seleccionada'}<br/>
+                             <strong>Fecha:</strong> {new Date().toLocaleDateString()}<br/>
+                             <strong>Oferta:</strong> {formatCurrency(precioOfertado)} (Baja: {baja.toFixed(2)}%)
+                         </div>
+                         <h2 className="text-xl font-bold mt-6 mb-2">Checklist Documentación</h2>
+                         <div className="mb-4">
+                             <h3 className="font-bold">Sobre A</h3>
+                             <ul>{envelopeFiles.A.map(f => <li key={f.id}>[ ] {f.name}</li>)}</ul>
+                         </div>
+                         <div className="mb-4">
+                             <h3 className="font-bold">Sobre B</h3>
+                             <ul>{envelopeFiles.B.map(f => <li key={f.id}>[ ] {f.name}</li>)}</ul>
+                         </div>
+                         <div className="mb-4">
+                             <h3 className="font-bold">Sobre C</h3>
+                             <ul>{envelopeFiles.C.map(f => <li key={f.id}>[ ] {f.name}</li>)}</ul>
+                         </div>
+                         <div className="mt-8 border-t pt-4 text-xs">Generado por BoardingGate LicitacionesPro</div>
                       </div>
                   </div>
               );
@@ -1009,7 +1182,7 @@
 
           return (
               <div className="h-full flex flex-col bg-[#0a0a0a]">
-                  <header className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center">
+                  <header className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center no-print">
                       <div className="flex items-center gap-4">
                           <button onClick={onBack} className="text-slate-400 hover:text-white"><Icons.Briefcase size={20} className="rotate-90" /></button>
                           <div>
@@ -1034,9 +1207,8 @@
 
                   <main className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                       <div className="max-w-5xl mx-auto">
-                          
                           {activeTab === 1 && (
-                              <div className="space-y-6 fade-in">
+                              <div className="space-y-6 fade-in no-print">
                                   <div className="glass-panel p-8 rounded-2xl text-center border-dashed border-2 border-slate-700 hover:border-blue-500 transition-colors">
                                       <div className="mb-4 text-blue-500 flex justify-center"><Icons.Upload size={48} /></div>
                                       <h3 className="text-xl font-bold text-white mb-2">Subir Pliegos (PDF)</h3>
@@ -1073,7 +1245,7 @@
                           )}
 
                           {activeTab === 2 && (
-                              <div className="fade-in space-y-6">
+                              <div className="fade-in space-y-6 no-print">
                                   {!localTender.analysis ? (
                                       <div className="text-center py-20 text-slate-500">
                                           <Icons.BrainCircuit size={48} className="mx-auto mb-4 opacity-50"/>
@@ -1081,7 +1253,10 @@
                                       </div>
                                   ) : (
                                       <>
-                                          <div className="flex justify-end mb-4">
+                                          <div className="flex justify-end mb-4 gap-2">
+                                               <button onClick={window.print} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-600">
+                                                   <Icons.Printer size={16}/> Imprimir
+                                               </button>
                                                <button onClick={()=>setReportVisible(!reportVisible)} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-600">
                                                    <Icons.FileText size={16}/> {reportVisible ? 'Ocultar Informe' : 'Ver Informe de Texto'}
                                                </button>
@@ -1141,41 +1316,6 @@
                                                           <div className="text-xs text-slate-500">Solvencia Técnica</div>
                                                           <div className="text-slate-300 text-xs">{localTender.analysis.requisitos_admision?.solvencia_tecnica || 'Según pliegos'}</div>
                                                       </div>
-                                                      <div className="grid grid-cols-2 gap-2 mt-2">
-                                                          <div className="bg-slate-800 p-2 rounded"><div className="text-[9px] text-slate-500">G. Provisional</div><div className="text-white">{localTender.analysis.requisitos_admision?.garantia_provisional || 'No'}</div></div>
-                                                          <div className="bg-slate-800 p-2 rounded"><div className="text-[9px] text-slate-500">Adscripción Medios</div><div className="text-white text-[10px] leading-tight">{localTender.analysis.requisitos_admision?.adscripcion_medios || 'Ver pliego'}</div></div>
-                                                      </div>
-                                                  </div>
-                                              </div>
-                                          </div>
-                                          
-                                          <div className="glass-panel p-6 rounded-xl relative">
-                                              <div className="absolute top-4 right-4"><CopyBtn text={JSON.stringify(localTender.analysis.criterios_adjudicacion, null, 2)}/></div>
-                                              <h4 className="text-purple-400 text-sm font-bold uppercase mb-4 tracking-wider flex items-center gap-2"><Icons.BrainCircuit size={16}/> Estrategia de Puntuación</h4>
-                                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                                  <div>
-                                                      <h5 className="text-xs text-slate-400 font-bold uppercase mb-2 border-b border-slate-700 pb-1">Automáticos / Fórmulas</h5>
-                                                      <div className="space-y-2">
-                                                          {localTender.analysis.criterios_adjudicacion?.formulas_automaticas?.map((c, i) => (
-                                                              <div key={i} className="bg-blue-900/10 border border-blue-500/20 p-3 rounded">
-                                                                  <div className="flex justify-between font-bold text-blue-200 text-sm"><span>{c.descripcion}</span><span>{c.puntos} pts</span></div>
-                                                                  <div className="text-[10px] text-slate-400 mt-1">{c.formula_resumen}</div>
-                                                              </div>
-                                                          ))}
-                                                          {(!localTender.analysis.criterios_adjudicacion?.formulas_automaticas?.length) && <span className="text-xs text-slate-600">No detectados</span>}
-                                                      </div>
-                                                  </div>
-                                                  <div>
-                                                      <h5 className="text-xs text-slate-400 font-bold uppercase mb-2 border-b border-slate-700 pb-1">Juicio de Valor (Memoria)</h5>
-                                                      <div className="space-y-2">
-                                                          {localTender.analysis.criterios_adjudicacion?.juicio_valor?.map((c, i) => (
-                                                              <div key={i} className="bg-purple-900/10 border border-purple-500/20 p-3 rounded">
-                                                                  <div className="flex justify-between font-bold text-purple-200 text-sm"><span>{c.descripcion}</span><span>{c.puntos} pts</span></div>
-                                                                  <div className="text-[10px] text-slate-400 mt-1">{c.contenido_clave}</div>
-                                                              </div>
-                                                          ))}
-                                                          {(!localTender.analysis.criterios_adjudicacion?.juicio_valor?.length) && <span className="text-xs text-slate-600">No detectados</span>}
-                                                      </div>
                                                   </div>
                                               </div>
                                           </div>
@@ -1185,12 +1325,22 @@
                           )}
 
                           {activeTab === 3 && (
-                              <div className="fade-in max-w-3xl mx-auto">
+                              <div className="fade-in max-w-3xl mx-auto no-print">
                                   <div className="glass-panel p-8 rounded-2xl shadow-2xl">
-                                      <div className="flex items-center gap-3 mb-8 pb-4 border-b border-slate-700">
-                                          <div className="p-3 bg-green-500/20 text-green-400 rounded-xl"><Icons.Calculator size={32}/></div>
-                                          <div><h3 className="text-2xl font-bold text-white">Calculadora de Oferta</h3><p className="text-sm text-slate-400">Estudio de costes y baja</p></div>
+                                      <div className="flex items-center justify-between gap-3 mb-8 pb-4 border-b border-slate-700">
+                                          <div className="flex items-center gap-3">
+                                            <div className="p-3 bg-green-500/20 text-green-400 rounded-xl"><Icons.Calculator size={32}/></div>
+                                            <div><h3 className="text-2xl font-bold text-white">Calculadora de Oferta</h3><p className="text-sm text-slate-400">Estudio de costes y baja</p></div>
+                                          </div>
+                                          <button onClick={()=>getAdvice('economic')} className="text-xs bg-blue-600 px-3 py-1 rounded text-white font-bold hover:bg-blue-500 flex items-center gap-2">{loadingAdvice ? <Icons.Loader/> : <Icons.BrainCircuit/>} Consultar Estrategia a la IA</button>
                                       </div>
+
+                                      {aiAdvice.economic && (
+                                          <div className="mb-6 bg-slate-800 p-4 rounded-lg border-l-4 border-blue-500 fade-in">
+                                              <h5 className="font-bold text-blue-300 text-sm mb-2">Análisis de Mercado (IA)</h5>
+                                              <div className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">{aiAdvice.economic}</div>
+                                          </div>
+                                      )}
 
                                       <div className="grid grid-cols-2 gap-8 mb-8">
                                           <div>
@@ -1237,152 +1387,21 @@
 
                           {activeTab === 4 && renderBidAssistant()}
                       </div>
-                  </main>
-              </div>
-          );
-      };
-
-      const Dashboard = ({ tenders, setTenders, onOpenTender, showPrompt }) => {
-          const handleNew = () => {
-              showPrompt('Nuevo Expediente', 'Introduce un título o referencia para identificar la licitación:', 'Ej: Obras Reforma Polideportivo...', async (title) => {
-                   const newT = { id: Date.now(), title, status: 'Nueva', files: [], analysis: null };
-                   await dbActions.put(DB_STORES.TENDERS, null, newT);
-                   setTenders([newT, ...tenders]);
-              });
-          };
-
-          return (
-              <div className="p-6 h-full flex flex-col fade-in">
-                   <div className="flex justify-between items-center mb-8">
-                      <div>
-                          <h2 className="text-3xl font-display font-bold text-white tracking-tight">Expedientes</h2>
-                          <p className="text-slate-400 text-sm">Gestión de licitaciones en curso</p>
+                      
+                      <div className="print-only hidden p-8 bg-white text-black">
+                         <h1 className="text-2xl font-bold mb-4">Resumen Técnico: {localTender.title}</h1>
+                         <div className="whitespace-pre-wrap font-mono text-sm border-b pb-4 mb-4">{generateReportText(localTender.analysis)}</div>
+                         {aiAdvice.economic && (
+                             <div className="mb-4">
+                                 <h2 className="text-lg font-bold">Estrategia Económica</h2>
+                                 <p className="text-sm whitespace-pre-wrap">{aiAdvice.economic}</p>
+                             </div>
+                         )}
+                         <div className="mb-4">
+                             <strong>Oferta Final:</strong> {formatCurrency(precioOfertado)} (Baja: {baja.toFixed(2)}%)
+                         </div>
                       </div>
-                      <button onClick={handleNew} className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2 shadow-lg shadow-blue-500/20"><Icons.Plus/> Nuevo Expediente</button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-20 custom-scrollbar">
-                      {tenders.length === 0 && <div className="col-span-full text-center py-20 text-slate-500 italic">No hay licitaciones activas. Crea una nueva.</div>}
-                      {tenders.map(t => (
-                          <div key={t.id} onClick={()=>onOpenTender(t)} className="glass-panel p-6 rounded-2xl cursor-pointer hover:bg-slate-800/80 transition-all hover:scale-[1.01] group border-l-4 border-l-transparent hover:border-l-blue-500">
-                              <div className="flex justify-between items-start mb-4">
-                                  <div className="bg-slate-800 p-2 rounded text-slate-300 group-hover:text-blue-400 transition-colors"><Icons.Briefcase/></div>
-                                  <span className={`text-[10px] px-2 py-1 rounded font-bold uppercase ${t.status==='Nueva'?'bg-blue-900/30 text-blue-300':'bg-amber-900/30 text-amber-300'}`}>{t.status}</span>
-                              </div>
-                              <h3 className="text-lg font-bold text-white mb-2 line-clamp-2">{t.title}</h3>
-                              {t.analysis ? (
-                                  <div className="space-y-1">
-                                      <div className="text-xs text-slate-400 truncate"><Icons.Building size={12} className="inline mr-1"/> {t.analysis.resumen_ejecutivo?.organismo}</div>
-                                      <div className="text-xs text-green-400 font-mono font-bold">{formatCurrency(t.analysis.datos_economicos?.pbl_sin_iva)}</div>
-                                  </div>
-                              ) : (
-                                  <div className="text-xs text-slate-500 italic">Pendiente de análisis...</div>
-                              )}
-                              <div className="mt-4 pt-4 border-t border-slate-700/50 flex justify-between items-center">
-                                  <span className="text-[10px] text-slate-500">{new Date(t.id).toLocaleDateString()}</span>
-                                  <span className="text-xs text-blue-400 font-bold group-hover:translate-x-1 transition-transform">Abrir &rarr;</span>
-                              </div>
-                          </div>
-                      ))}
-                  </div>
-              </div>
-          );
-      };
-
-      const App = () => {
-          const [view, setView] = useState('dashboard'); 
-          const [tenders, setTenders] = useState([]);
-          const [companies, setCompanies] = useState([]);
-          const [activeTender, setActiveTender] = useState(null);
-          
-          const [rk, setRk] = usePersistentState('bg_app_rk_st', ''); 
-          const [tc, setTc] = usePersistentState('bg_app_tc_st', 0); 
-          const isAuth = _bg_check_sys(rk);
-
-          const [modal, setModal] = useState({ open: false, title: '', message: '', type: '', onConfirm: null });
-          const [promptModal, setPromptModal] = useState({ open: false, title: '', message: '', placeholder: '', onConfirm: null });
-
-          useEffect(() => {
-              const init = async () => {
-                  setTenders(await dbActions.getAll(DB_STORES.TENDERS));
-                  setCompanies(await dbActions.getAll(DB_STORES.COMPANIES));
-              };
-              init();
-          }, [view]);
-
-          const showModal = (title, message, type = 'default', onConfirm = null) => {
-              setModal({ open: true, title, message, type, onConfirm });
-          };
-          const showPrompt = (title, message, placeholder, onConfirm) => {
-              setPromptModal({ open: true, title, message, placeholder, onConfirm });
-          };
-
-          const handleActivate = (code) => {
-              if(!code) return;
-              if(_bg_check_sys(code)) {
-                  setRk(code);
-                  showModal('ACTIVACIÓN ÉXITO', 'Sistema registrado correctamente. Acceso ilimitado habilitado.', 'success');
-              } else {
-                  setRk('');
-                  showModal('ERROR', 'El código introducido no es válido para esta estación.', 'danger');
-              }
-          };
-
-          const handleOpenTender = (t) => { 
-              if (!isAuth && tc >= 10) {
-                   showModal('Prueba Finalizada', 'Has alcanzado el límite de 10 licitaciones en modo prueba. Registra la app en Configuración.', 'danger', () => setView('settings'));
-                   return;
-              }
-              if(!isAuth) setTc(prev => prev + 1);
-              setActiveTender(t); 
-              setView('workspace'); 
-          };
-
-          const [apiKey] = usePersistentState('gemini_api_key', '');
-
-          return (
-              <div className="h-full flex flex-col text-white overflow-hidden">
-                  {view !== 'workspace' && (
-                      <nav className="shrink-0 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-6 py-4 flex justify-between items-center z-20">
-                          <div>
-                            <div className="text-3xl font-display font-bold tracking-tight leading-none">
-                                <span className="text-white">Boarding</span><span className="text-blue-600">Gate</span>
-                            </div>
-                            <div className="text-sm font-bold tracking-widest">
-                                <span className="text-white">Licitaciones</span><span className="text-green-600">Pro</span>
-                            </div>
-                          </div>
-                          <div className="flex bg-slate-800 rounded-lg p-1 gap-1">
-                              <button onClick={()=>setView('dashboard')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='dashboard'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Briefcase size={16}/> Licitaciones</button>
-                              <button onClick={()=>setView('companies')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='companies'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Building size={16}/> Empresas</button>
-                              <button onClick={()=>setView('settings')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='settings'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Settings size={16}/> Config</button>
-                          </div>
-                      </nav>
-                  )}
-
-                  <div className="flex-1 overflow-hidden relative">
-                      {view === 'dashboard' && <Dashboard tenders={tenders} setTenders={setTenders} onOpenTender={handleOpenTender} showPrompt={showPrompt} />}
-                      {view === 'companies' && <CompanyManager companies={companies} setCompanies={setCompanies} showModal={showModal} />}
-                      {view === 'workspace' && activeTender && <Workspace tender={activeTender} onBack={()=>setView('dashboard')} apiKey={apiKey} companies={companies} showModal={showModal} />}
-                      {view === 'settings' && <SettingsTab isAuth={isAuth} trialCount={tc} onActivate={handleActivate} />}
-                  </div>
-
-                  <Modal 
-                      isOpen={modal.open} 
-                      title={modal.title} 
-                      message={modal.message} 
-                      type={modal.type} 
-                      onClose={() => setModal({ ...modal, open: false })}
-                      onConfirm={modal.onConfirm ? () => { modal.onConfirm(); setModal({ ...modal, open: false }); } : null}
-                  />
-                  <PromptModal
-                      isOpen={promptModal.open}
-                      title={promptModal.title}
-                      message={promptModal.message}
-                      placeholder={promptModal.placeholder}
-                      onClose={() => setPromptModal({ ...promptModal, open: false })}
-                      onConfirm={(val) => { promptModal.onConfirm(val); setPromptModal({ ...promptModal, open: false }); }}
-                  />
+                  </main>
               </div>
           );
       };
