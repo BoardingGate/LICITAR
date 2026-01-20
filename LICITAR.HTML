@@ -235,37 +235,72 @@
 
       const generateReportText = (analysis) => {
           if(!analysis) return '';
-          let t = "INFORME DE LICITACIÓN - GENERADO POR BOARDINGGATE\n\n";
-          t += "1. RESUMEN EJECUTIVO\n";
-          t += `Organismo: ${analysis.resumen_ejecutivo?.organismo || '-'}\n`;
-          t += `Título: ${analysis.resumen_ejecutivo?.titulo_expediente || '-'}\n`;
-          t += `Expediente: ${analysis.resumen_ejecutivo?.numero_expediente || '-'}\n`;
-          t += `Lugar: ${analysis.resumen_ejecutivo?.localizacion || '-'}\n`;
-          t += `Objeto: ${analysis.resumen_ejecutivo?.objeto_detallado || '-'}\n`;
-          t += `CPV: ${analysis.resumen_ejecutivo?.cpv || '-'}\n\n`;
+          const div = "--------------------------------------------------------------------------------\n";
+          const bigDiv = "================================================================================\n";
           
-          t += "2. DATOS ECONÓMICOS Y PLAZOS\n";
-          t += `PBL (Sin IVA): ${formatCurrency(analysis.datos_economicos?.pbl_sin_iva)}\n`;
-          t += `Valor Estimado: ${formatCurrency(analysis.datos_economicos?.valor_estimado)}\n`;
-          t += `Revisión Precios: ${analysis.datos_economicos?.revision_precios || 'No'}\n`;
-          t += `Plazo Ejecución: ${analysis.plazos_fechas?.plazo_ejecucion || '-'}\n`;
-          t += `Fecha Límite: ${analysis.plazos_fechas?.fecha_limite_presentacion || '-'}\n\n`;
+          let t = bigDiv;
+          t += `INFORME TÉCNICO DE LICITACIÓN - BoardingGate\n`;
+          t += `FECHA DE GENERACIÓN: ${new Date().toLocaleString()}\n`;
+          t += bigDiv + "\n";
           
-          t += "3. REQUISITOS DE ADMISIÓN\n";
-          t += `Clasificación: ${analysis.requisitos_admision?.clasificacion_exigida || 'No'}\n`;
-          t += `Solvencia Técnica: ${analysis.requisitos_admision?.solvencia_tecnica || '-'}\n`;
-          t += `Garantía Provisional: ${analysis.requisitos_admision?.garantia_provisional || '-'}\n`;
-          t += `Adscripción Medios: ${analysis.requisitos_admision?.adscripcion_medios || '-'}\n\n`;
+          t += "1. DATOS GENERALES DEL EXPEDIENTE\n";
+          t += div;
+          t += `ORGANISMO CONTRATANTE:    ${analysis.resumen_ejecutivo?.organismo || 'No detectado'}\n`;
+          t += `NÚMERO DE EXPEDIENTE:     ${analysis.resumen_ejecutivo?.numero_expediente || 'No detectado'}\n`;
+          t += `TÍTULO DEL PROYECTO:      ${analysis.resumen_ejecutivo?.titulo_expediente || 'No detectado'}\n`;
+          t += `LOCALIZACIÓN:             ${analysis.resumen_ejecutivo?.localizacion || 'No detectado'}\n`;
+          t += `TIPO DE CONTRATO:         ${analysis.resumen_ejecutivo?.tipo_contrato || '-'}\n`;
+          t += `CÓDIGO CPV PRINCIPAL:     ${analysis.resumen_ejecutivo?.cpv || '-'}\n\n`;
+          t += `OBJETO DETALLADO:\n${analysis.resumen_ejecutivo?.objeto_detallado || 'Ver pliegos'}\n\n\n`;
+          
+          t += "2. DATOS ECONÓMICOS Y PLAZOS DE EJECUCIÓN\n";
+          t += div;
+          t += `PRESUPUESTO BASE (PBL):   ${formatCurrency(analysis.datos_economicos?.pbl_sin_iva)} (Sin IVA)\n`;
+          t += `VALOR ESTIMADO (VEC):     ${formatCurrency(analysis.datos_economicos?.valor_estimado)}\n`;
+          t += `PLAZO DE EJECUCIÓN:       ${analysis.plazos_fechas?.plazo_ejecucion || 'Consultar'}\n`;
+          t += `REVISIÓN DE PRECIOS:      ${analysis.datos_economicos?.revision_precios || 'No detectada'}\n`;
+          t += `FECHA LÍMITE OFERTAS:     ${analysis.plazos_fechas?.fecha_limite_presentacion || 'Consultar plataforma'}\n\n\n`;
+          
+          t += "3. REQUISITOS DE SOLVENCIA Y ADMISIÓN\n";
+          t += div;
+          t += `CLASIFICACIÓN EXIGIDA:    ${analysis.requisitos_admision?.clasificacion_exigida || 'NO SE REQUIERE'}\n\n`;
+          
+          t += "SOLVENCIA TÉCNICA REQUERIDA:\n";
+          t += `${analysis.requisitos_admision?.solvencia_tecnica || 'Según lo establecido en el PCAP.'}\n\n`;
+          
+          t += "SOLVENCIA ECONÓMICA REQUERIDA:\n";
+          t += `${analysis.requisitos_admision?.solvencia_economica || 'Según lo establecido en el PCAP.'}\n\n`;
+          
+          t += `GARANTÍA PROVISIONAL:     ${analysis.requisitos_admision?.garantia_provisional || 'NO'}\n`;
+          t += `ADSCRIPCIÓN DE MEDIOS:    ${analysis.requisitos_admision?.adscripcion_medios || 'Ver pliegos'}\n\n\n`;
 
-          t += "4. CRITERIOS DE ADJUDICACIÓN\n";
-          if(analysis.criterios_adjudicacion?.formulas_automaticas?.length){
-              t += "AUTOMÁTICOS:\n";
-              analysis.criterios_adjudicacion.formulas_automaticas.forEach(c => t += `- ${c.descripcion}: ${c.puntos} pts (${c.formula_resumen || ''})\n`);
+          t += "4. CRITERIOS DE VALORACIÓN DE OFERTAS\n";
+          t += div;
+          if(analysis.criterios_adjudicacion?.formulas_automaticas?.length > 0){
+              t += "A) CRITERIOS EVALUABLES MEDIANTE FÓRMULAS (AUTOMÁTICOS):\n";
+              analysis.criterios_adjudicacion.formulas_automaticas.forEach(c => {
+                  t += `   - ${c.descripcion.toUpperCase()}: ${c.puntos} Puntos\n`;
+                  if(c.formula_resumen) t += `     (Detalle: ${c.formula_resumen})\n`;
+              });
+              t += "\n";
           }
-          if(analysis.criterios_adjudicacion?.juicio_valor?.length){
-              t += "JUICIO DE VALOR:\n";
-              analysis.criterios_adjudicacion.juicio_valor.forEach(c => t += `- ${c.descripcion}: ${c.puntos} pts (${c.contenido_clave || ''})\n`);
+          
+          if(analysis.criterios_adjudicacion?.juicio_valor?.length > 0){
+              t += "B) CRITERIOS DEPENDIENTES DE JUICIO DE VALOR (MEMORIA TÉCNICA):\n";
+              analysis.criterios_adjudicacion.juicio_valor.forEach(c => {
+                  t += `   - ${c.descripcion.toUpperCase()}: ${c.puntos} Puntos\n`;
+                  if(c.contenido_clave) t += `     (Claves: ${c.contenido_clave})\n`;
+              });
+              t += "\n";
           }
+          t += "\n";
+          
+          t += "5. CONDICIONES ESPECIALES Y PENALIDADES\n";
+          t += div;
+          if(analysis.condiciones_especiales?.subcontratacion) t += `SUBCONTRATACIÓN: ${analysis.condiciones_especiales.subcontratacion}\n`;
+          if(analysis.condiciones_especiales?.penalidades) t += `PENALIDADES: ${analysis.condiciones_especiales.penalidades}\n`;
+          t += "\n";
+          t += bigDiv;
           
           return t;
       };
@@ -422,10 +457,10 @@
                           {!isAuth && (
                               <div className="flex justify-between items-center bg-blue-900/10 border border-blue-500/30 rounded-xl p-4">
                                   <div className="text-sm text-blue-200">
-                                      Periodo de cortesía consumido: <span className="font-bold ml-1">{trialCount} de 4 licitaciones</span>
+                                      Periodo de cortesía consumido: <span className="font-bold ml-1">{trialCount} de 10 licitaciones</span>
                                   </div>
                                   <div className="w-24 h-2 bg-slate-800 rounded-full overflow-hidden">
-                                      <div className="h-full bg-blue-500" style={{width: `${(Math.min(trialCount,4)/4)*100}%`}}></div>
+                                      <div className="h-full bg-blue-500" style={{width: `${(Math.min(trialCount,10)/10)*100}%`}}></div>
                                   </div>
                               </div>
                           )}
@@ -708,6 +743,49 @@
               a.href = url; a.download = name; a.click();
           };
 
+          const generateLetterText = () => {
+              if(!selectedCompanyId) return "Selecciona una empresa para generar el borrador.";
+              const c = companies.find(x=>x.id == selectedCompanyId);
+              const t = localTender.analysis;
+              const date = new Date().toLocaleDateString('es-ES', {year: 'numeric', month: 'long', day: 'numeric'});
+              
+              let letter = "";
+              letter += `${c.name}\n${c.address}\nCIF: ${c.cif}\n`;
+              letter += "--------------------------------------------------------\n\n";
+              
+              letter += `A la Mesa de Contratación de:\n${t?.resumen_ejecutivo?.organismo || '[ORGANISMO]'}\n\n`;
+              
+              letter += `REFERENCIA: Expediente Nº ${t?.resumen_ejecutivo?.numero_expediente || '[NUMERO]'}\n`;
+              letter += `OBJETO: ${t?.resumen_ejecutivo?.titulo_expediente || '[TITULO]'}\n\n`;
+              
+              letter += `En ${t?.resumen_ejecutivo?.localizacion || '[LUGAR]'}, a ${date}\n\n`;
+              
+              letter += "Muy Sres. míos:\n\n";
+              
+              letter += `D. ${c.repName}, con DNI nº ${c.repDni}, actuando en nombre y representación de la entidad mercantil ${c.name}, con domicilio social en ${c.address} y CIF ${c.cif}, enterado de las condiciones y requisitos que se exigen para la adjudicación del contrato de referencia.\n\n`;
+              
+              letter += "EXPONE:\n\n";
+              
+              letter += "I. Que conoce el Pliego de Cláusulas Administrativas Particulares y demás documentación rectora del contrato, aceptándolos íntegramente.\n\n";
+              
+              letter += "II. Que la empresa que represento cumple con todos los requisitos y condiciones exigidos para contratar con la Administración.\n\n";
+              
+              letter += "III. Que se compromete a la ejecución del contrato por el siguiente importe:\n\n";
+              
+              letter += `   PRECIO OFERTADO (SIN IVA):  ${formatCurrency(precioOfertado)}\n`;
+              letter += `   BAJA APLICADA:              ${baja.toFixed(2)} %\n\n`;
+              
+              letter += "Quedando a su disposición para cuanta información consideren oportuna.\n\n";
+              
+              letter += "Atentamente,\n\n\n\n";
+              
+              letter += "__________________________\n";
+              letter += `Fdo: ${c.repName}\n`;
+              letter += "Administrador / Apoderado";
+              
+              return letter;
+          };
+
           return (
               <div className="h-full flex flex-col bg-[#0a0a0a]">
                   <header className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center">
@@ -792,7 +870,7 @@
                                               <div className="glass-panel p-6 rounded-xl mb-6 border border-blue-500/30 relative group">
                                                   <div className="absolute top-4 right-4"><CopyBtn text={generateReportText(localTender.analysis)}/></div>
                                                   <h4 className="text-blue-400 text-sm font-bold uppercase mb-4 tracking-wider">Informe Completo</h4>
-                                                  <div className="bg-slate-900 p-4 rounded text-xs text-slate-300 font-mono whitespace-pre-wrap select-all max-h-96 overflow-y-auto">
+                                                  <div className="bg-slate-900 p-6 rounded text-xs text-slate-300 font-mono whitespace-pre-wrap select-all max-h-96 overflow-y-auto leading-relaxed border border-slate-700">
                                                       {generateReportText(localTender.analysis)}
                                                   </div>
                                               </div>
@@ -959,12 +1037,9 @@
                                           <div className="absolute top-0 right-0 bg-blue-600 text-white text-[10px] px-2 py-1 font-bold rounded-bl">GENERADO</div>
                                           <h4 className="text-white font-bold mb-2 flex items-center gap-2"><Icons.FileText size={16}/> Carta de Proposición</h4>
                                           <div className="relative">
-                                              {selectedCompanyId && <div className="absolute top-2 right-2 z-10"><CopyBtn text={`[LOGO]\n\nD. ${companies.find(x=>x.id == selectedCompanyId).repName}, con DNI ${companies.find(x=>x.id == selectedCompanyId).repDni}, en nombre de ${companies.find(x=>x.id == selectedCompanyId).name} con CIF ${companies.find(x=>x.id == selectedCompanyId).cif}...\n\nEXPONE:\nQue enterado del pliego para la contratación de "${localTender.analysis?.resumen_ejecutivo?.titulo_expediente || '...'}", se compromete a su ejecución por la cantidad de:\n\n${formatCurrency(precioOfertado)} (${baja.toFixed(2)}% de Baja)\n\nFecha: ${new Date().toLocaleDateString()}\nFirma: _________________`} /></div>}
-                                              <div className="bg-slate-900 p-4 rounded text-xs text-slate-400 font-mono h-64 overflow-y-auto whitespace-pre-wrap select-all">
-                                                  {selectedCompanyId ? (() => {
-                                                      const c = companies.find(x=>x.id == selectedCompanyId);
-                                                      return `[LOGO: ${c.logoId ? 'SÍ (Adjunto)' : 'NO'}]\n\nD. ${c.repName}, con DNI ${c.repDni}, en nombre de ${c.name} con CIF ${c.cif}...\n\nEXPONE:\nQue enterado del pliego para la contratación de "${localTender.analysis?.resumen_ejecutivo?.titulo_expediente || '...'}", se compromete a su ejecución por la cantidad de:\n\n${formatCurrency(precioOfertado)} (${baja.toFixed(2)}% de Baja)\n\nFecha: ${new Date().toLocaleDateString()}\nFirma: _________________`
-                                                  })() : "Selecciona una empresa para generar el borrador."}
+                                              {selectedCompanyId && <div className="absolute top-2 right-2 z-10"><CopyBtn text={generateLetterText()} /></div>}
+                                              <div className="bg-slate-900 p-6 rounded text-xs text-slate-300 font-mono h-[500px] overflow-y-auto whitespace-pre-wrap select-all leading-relaxed border border-slate-700">
+                                                  {generateLetterText()}
                                               </div>
                                           </div>
                                       </div>
@@ -1089,8 +1164,8 @@
           };
 
           const handleOpenTender = (t) => { 
-              if (!isAuth && tc >= 4) {
-                   showModal('Prueba Finalizada', 'Has alcanzado el límite de 4 licitaciones en modo prueba. Registra la app en Configuración.', 'danger', () => setView('settings'));
+              if (!isAuth && tc >= 10) {
+                   showModal('Prueba Finalizada', 'Has alcanzado el límite de 10 licitaciones en modo prueba. Registra la app en Configuración.', 'danger', () => setView('settings'));
                    return;
               }
               if(!isAuth) setTc(prev => prev + 1);
