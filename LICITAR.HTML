@@ -6,11 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>BoardingGate - LicitacionesPro</title>
     
-    <!-- Librerías Externas -->
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <script>eruda.init();</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -33,7 +33,6 @@
       @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       .step-line { position: absolute; left: 15px; top: 40px; bottom: 0; width: 2px; background: #334155; z-index: 0; }
       
-      /* Estilos para Impresión */
       @media print {
         body { background: white; color: black; overflow: visible; height: auto; }
         #root { display: block; height: auto; overflow: visible; }
@@ -51,6 +50,22 @@
     <script type="text/babel">
       const { useState, useEffect, useMemo, useRef } = React;
       const { createRoot } = ReactDOM;
+
+      // --- CONFIGURACIÓN DE PLATAFORMAS ---
+      const TENDER_PLATFORMS = [
+          { key: 'catalunya', keywords: ['catalunya', 'cataluña', 'generalitat', 'catsalut'], name: 'Plataforma de Serveis de Contractació Pública', url: 'https://contractaciopublica.gencat.cat/', note: 'Requiere Sobre Digital. Valida la huella antes de las 12h del último día.' },
+          { key: 'madrid', keywords: ['madrid'], name: 'Portal de la Contratación Pública de la Comunidad de Madrid', url: 'http://www.madrid.org/contratospublicos', note: 'Ojo: Algunos expedientes usan la PLACSP estatal. Verifica en el pliego.' },
+          { key: 'andalucia', keywords: ['andalucía', 'andalucia', 'junta'], name: 'Plataforma de Contratación de la Junta de Andalucía', url: 'https://www.juntadeandalucia.es/temas/contratacion-publica/perfiles-licitaciones/plataforma.html', note: 'Usa el componente SiREC. Prepara Java.' },
+          { key: 'euskadi', keywords: ['euskadi', 'vasco', 'vasca'], name: 'Contratación Pública en Euskadi', url: 'https://www.contratacion.euskadi.eus/', note: 'Requiere firma electrónica avanzada.' },
+          { key: 'placsp', keywords: ['ministerio', 'estatal', 'seguridad social', 'adif', 'aena'], name: 'Plataforma de Contratación del Sector Público (PLACSP)', url: 'https://contrataciondelestado.es/', note: 'La plataforma estándar. Requiere Autofirma. No esperes al último minuto.' }
+      ];
+
+      const detectPlatform = (orgName) => {
+          if (!orgName) return null;
+          const lower = orgName.toLowerCase();
+          const found = TENDER_PLATFORMS.find(p => p.keywords.some(k => lower.includes(k)));
+          return found || TENDER_PLATFORMS[4]; // Default to PLACSP
+      };
 
       // --- UTILS ---
       const _bg_check_sys = (k) => {
@@ -168,16 +183,48 @@
           }
       };
 
-      // --- AI ---
-      const askAIStrategy = async (apiKey, analysis, type) => {
+      // --- AI LOGIC (CONTEXT-AWARE) ---
+      const askAIStrategy = async (apiKey, analysis, tenderContext, type) => {
           const savedModel = window.localStorage.getItem('gemini_model');
           const MODEL = savedModel ? JSON.parse(savedModel) : "gemini-1.5-flash"; 
           
+          // Truncamos el contexto para no exceder tokens
+          const rawContext = tenderContext.substring(0, 15000); 
+
           let prompt = "";
           if (type === 'economic') {
-              prompt = `Actúa como un experto Consultor de Licitaciones y Analista de Costes. Analiza el siguiente resumen de la licitación y sugiere una estrategia de PRECIOS y BAJA (descuento) adecuada al mercado actual. DATOS: Objeto: ${analysis.resumen_ejecutivo.objeto_detallado}. CPV: ${analysis.resumen_ejecutivo.cpv}. Presupuesto Base: ${analysis.datos_economicos.pbl_sin_iva}. Lugar: ${analysis.resumen_ejecutivo.localizacion}. RESPUESTA ESPERADA (Formato corto y directo): 1. Riesgo estimado del contrato (Bajo/Medio/Alto) y por qué. 2. Rango de Baja Temeraria estimada (aprox). 3. Baja recomendada Conservadora (para asegurar no perder dinero). 4. Baja recomendada Agresiva (para ir a ganar, asumiendo riesgo). 5. Tips rápidos de optimización de costes para este tipo de obra/servicio.`;
+              prompt = `
+                Actúa como un Consultor Senior de Licitaciones en España.
+                Analiza el siguiente texto de los pliegos (PCAP) y los datos extraídos.
+                
+                DATOS CLAVE:
+                CPV: ${analysis.resumen_ejecutivo.cpv}
+                Presupuesto Base: ${analysis.datos_economicos.pbl_sin_iva}
+                Ubicación: ${analysis.resumen_ejecutivo.localizacion}
+                
+                CONTEXTO DEL PLIEGO:
+                ${rawContext}
+                
+                TAREA:
+                1. Estima el riesgo de Baja Temeraria basándote en el tipo de contrato (Obra/Servicio) y la redacción del pliego sobre bajas anormales.
+                2. Sugiere un porcentaje de BAJA COMPETITIVA (para ganar) y uno CONSERVADOR (para asegurar margen).
+                3. Identifica si hay fórmulas de revisión de precios.
+                4. Da 3 consejos para optimizar costes en este CPV específico.
+              `;
           } else if (type === 'technical') {
-              prompt = `Actúa como un Ingeniero Jefe de Licitaciones. Analiza el objeto del contrato y sugiere 3 MEJORAS TÉCNICAS o aportaciones de valor que suelen puntuar alto en este tipo de licitaciones (Juicio de Valor). DATOS: Objeto: ${analysis.resumen_ejecutivo.objeto_detallado}. CPV: ${analysis.resumen_ejecutivo.cpv}. Criterios Juicio Valor: ${JSON.stringify(analysis.criterios_adjudicacion.juicio_valor)}. RESPUESTA ESPERADA: Lista 3 mejoras concretas, justificando brevemente por qué aportan valor al órgano de contratación.`;
+              prompt = `
+                Actúa como un Ingeniero Jefe de Licitaciones.
+                Objetivo: Ganar la máxima puntuación en el Sobre B (Juicio de Valor).
+                
+                CONTEXTO DEL PLIEGO (CRITERIOS DE VALORACIÓN):
+                ${rawContext}
+                
+                TAREA:
+                Identifica los criterios de valoración subjetivos (Juicio de Valor) en el texto proporcionado.
+                Propón 3 MEJORAS TÉCNICAS o metodológicas CONCRETAS que encajen *perfectamente* con lo que pide este pliego.
+                No inventes mejoras genéricas. Si el pliego pide "Plan de Calidad", sugiere una mejora específica (ej: ISO específica). Si pide "Reducción de Plazo", calcula la óptima.
+                Justifica cada mejora citando por qué da puntos según el texto.
+              `;
           }
 
           try {
@@ -188,7 +235,7 @@
               });
               if(!res.ok) throw new Error("Error API");
               const data = await res.json();
-              return data.candidates?.[0]?.content?.parts?.[0]?.text || "No se pudo obtener consejo.";
+              return data.candidates?.[0]?.content?.parts?.[0]?.text || "No se pudo obtener consejo detallado.";
           } catch(e) { return "Error consultando a la IA: " + e.message; }
       };
 
@@ -569,7 +616,6 @@
           const [aiAdvice, setAiAdvice] = useState({ economic: '', technical: '' });
           const [loadingAdvice, setLoadingAdvice] = useState(false);
 
-          // Envelope Files State (Init from Tender or empty)
           const [envelopeFiles, setEnvelopeFiles] = useState({ A: [], B: [], C: [] });
 
           useEffect(() => { if (localTender.envelopeFiles) { setEnvelopeFiles(localTender.envelopeFiles); } }, []);
@@ -658,8 +704,9 @@
 
           const getAdvice = async (type) => {
               if(!apiKey) { showModal('Error', 'Necesitas API Key', 'danger'); return; }
+              if(!localTender.rawText) { showModal('Error', 'Sube el pliego primero', 'warning'); return; }
               setLoadingAdvice(true);
-              const txt = await askAIStrategy(apiKey, localTender.analysis, type);
+              const txt = await askAIStrategy(apiKey, localTender.analysis, localTender.rawText, type);
               setAiAdvice(prev => ({ ...prev, [type]: txt }));
               setLoadingAdvice(false);
           };
@@ -692,6 +739,8 @@
 
           const renderBidAssistant = () => {
               if(!localTender.analysis) return ( <div className="text-center py-20"><p className="text-slate-400 mb-4">Para iniciar el asistente de licitación, primero debes analizar los pliegos.</p><button onClick={()=>setActiveTab(1)} className="text-blue-400 hover:underline">Ir a Documentos</button></div> );
+
+              const detectedPlatform = detectPlatform(localTender.analysis.resumen_ejecutivo.organismo);
 
               return (
                   <div className="max-w-4xl mx-auto space-y-6 pb-20 fade-in no-print">
@@ -798,7 +847,12 @@
                                       <div className="p-6 text-center space-y-4">
                                           <div className="w-16 h-16 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center mx-auto mb-4"><Icons.CheckCircle size={32}/></div>
                                           <h3 className="text-xl font-bold text-white">¡Estás listo para licitar!</h3>
-                                          <p className="text-slate-300 text-sm max-w-md mx-auto">Tienes todos los archivos organizados. Usa el botón de imprimir para tener un checklist final.</p>
+                                          <p className="text-slate-300 text-sm max-w-md mx-auto">Tienes todos los archivos organizados. Accede a la plataforma para presentar:</p>
+                                          <div className="bg-slate-800 p-4 rounded text-left border border-slate-600 max-w-md mx-auto">
+                                              <div className="text-blue-400 font-bold mb-1 flex items-center gap-2"><Icons.ExternalLink size={16}/> {detectedPlatform.name}</div>
+                                              <p className="text-xs text-slate-400 mb-3">{detectedPlatform.note}</p>
+                                              <a href={detectedPlatform.url} target="_blank" className="btn-primary px-4 py-2 rounded w-full block text-center text-sm font-bold">Ir a la Plataforma</a>
+                                          </div>
                                           <button onClick={window.print} className="bg-slate-700 hover:bg-slate-600 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 mx-auto"><Icons.Printer/> Imprimir Resumen Oferta</button>
                                       </div>
                                   )}
@@ -911,80 +965,6 @@
                          <div className="mb-4"><strong>Oferta Final:</strong> {formatCurrency(precioOfertado)} (Baja: {baja.toFixed(2)}%)</div>
                       </div>
                   </main>
-              </div>
-          );
-      };
-
-      const Dashboard = ({ tenders, setTenders, onOpenTender, showPrompt }) => {
-          const handleNew = () => {
-              showPrompt('Nuevo Expediente', 'Introduce un título o referencia para identificar la licitación:', 'Ej: Obras Reforma Polideportivo...', async (title) => {
-                   const newT = { id: Date.now(), title, status: 'Nueva', files: [], analysis: null, envelopeFiles: {A:[], B:[], C:[]} };
-                   await dbActions.put(DB_STORES.TENDERS, null, newT);
-                   setTenders([newT, ...tenders]);
-              });
-          };
-
-          return (
-              <div className="p-6 h-full flex flex-col fade-in no-print">
-                   <div className="flex justify-between items-center mb-8">
-                      <div><h2 className="text-3xl font-display font-bold text-white tracking-tight">Expedientes</h2><p className="text-slate-400 text-sm">Gestión de licitaciones en curso</p></div>
-                      <button onClick={handleNew} className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2 shadow-lg shadow-blue-500/20"><Icons.Plus/> Nuevo Expediente</button>
-                  </div>
-                  {tenders.length === 0 ? <div className="col-span-full text-center py-20 text-slate-500 italic">No hay licitaciones activas. Crea una nueva.</div> : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-20 custom-scrollbar">
-                          {tenders.map(t => (
-                              <div key={t.id} onClick={()=>onOpenTender(t)} className="glass-panel p-6 rounded-2xl cursor-pointer hover:bg-slate-800/80 transition-all hover:scale-[1.01] group border-l-4 border-l-transparent hover:border-l-blue-500">
-                                  <div className="flex justify-between items-start mb-4"><div className="bg-slate-800 p-2 rounded text-slate-300 group-hover:text-blue-400 transition-colors"><Icons.Briefcase/></div><span className={`text-[10px] px-2 py-1 rounded font-bold uppercase ${t.status==='Nueva'?'bg-blue-900/30 text-blue-300':'bg-amber-900/30 text-amber-300'}`}>{t.status}</span></div>
-                                  <h3 className="text-lg font-bold text-white mb-2 line-clamp-2">{t.title}</h3>
-                                  {t.analysis ? (<div className="space-y-1"><div className="text-xs text-slate-400 truncate"><Icons.Building size={12} className="inline mr-1"/> {t.analysis.resumen_ejecutivo?.organismo}</div><div className="text-xs text-green-400 font-mono font-bold">{formatCurrency(t.analysis.datos_economicos?.pbl_sin_iva)}</div></div>) : (<div className="text-xs text-slate-500 italic">Pendiente de análisis...</div>)}
-                                  <div className="mt-4 pt-4 border-t border-slate-700/50 flex justify-between items-center"><span className="text-[10px] text-slate-500">{new Date(t.id).toLocaleDateString()}</span><span className="text-xs text-blue-400 font-bold group-hover:translate-x-1 transition-transform">Abrir &rarr;</span></div>
-                              </div>
-                          ))}
-                      </div>
-                  )}
-              </div>
-          );
-      };
-
-      const App = () => {
-          const [view, setView] = useState('dashboard'); 
-          const [tenders, setTenders] = useState([]);
-          const [companies, setCompanies] = useState([]);
-          const [activeTender, setActiveTender] = useState(null);
-          const [rk, setRk] = usePersistentState('bg_app_rk_st', ''); 
-          const [tc, setTc] = usePersistentState('bg_app_tc_st', 0); 
-          const isAuth = _bg_check_sys(rk);
-          const [modal, setModal] = useState({ open: false, title: '', message: '', type: '', onConfirm: null });
-          const [promptModal, setPromptModal] = useState({ open: false, title: '', message: '', placeholder: '', onConfirm: null });
-          const [apiKey] = usePersistentState('gemini_api_key', '');
-
-          useEffect(() => { const init = async () => { setTenders(await dbActions.getAll(DB_STORES.TENDERS)); setCompanies(await dbActions.getAll(DB_STORES.COMPANIES)); }; init(); }, [view]);
-
-          const showModal = (title, message, type = 'default', onConfirm = null) => { setModal({ open: true, title, message, type, onConfirm }); };
-          const showPrompt = (title, message, placeholder, onConfirm) => { setPromptModal({ open: true, title, message, placeholder, onConfirm }); };
-          const handleActivate = (code) => { if(!code) return; if(_bg_check_sys(code)) { setRk(code); showModal('ACTIVACIÓN ÉXITO', 'Sistema registrado.', 'success'); } else { setRk(''); showModal('ERROR', 'Código inválido.', 'danger'); } };
-          const handleOpenTender = (t) => { if (!isAuth && tc >= 10) { showModal('Prueba Finalizada', 'Límite de 10 licitaciones.', 'danger', () => setView('settings')); return; } if(!isAuth) setTc(prev => prev + 1); setActiveTender(t); setView('workspace'); };
-
-          return (
-              <div className="h-full flex flex-col text-white overflow-hidden">
-                  {view !== 'workspace' && (
-                      <nav className="shrink-0 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-6 py-4 flex justify-between items-center z-20 no-print">
-                          <div><div className="text-3xl font-display font-bold tracking-tight leading-none"><span className="text-white">Boarding</span><span className="text-blue-600">Gate</span></div><div className="text-sm font-bold tracking-widest"><span className="text-white">Licitaciones</span><span className="text-green-600">Pro</span></div></div>
-                          <div className="flex bg-slate-800 rounded-lg p-1 gap-1">
-                              <button onClick={()=>setView('dashboard')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='dashboard'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Briefcase size={16}/> Licitaciones</button>
-                              <button onClick={()=>setView('companies')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='companies'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Building size={16}/> Empresas</button>
-                              <button onClick={()=>setView('settings')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='settings'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Settings size={16}/> Config</button>
-                          </div>
-                      </nav>
-                  )}
-                  <div className="flex-1 overflow-hidden relative">
-                      {view === 'dashboard' && <Dashboard tenders={tenders} setTenders={setTenders} onOpenTender={handleOpenTender} showPrompt={showPrompt} />}
-                      {view === 'companies' && <CompanyManager companies={companies} setCompanies={setCompanies} showModal={showModal} />}
-                      {view === 'workspace' && activeTender && <Workspace tender={activeTender} onBack={()=>setView('dashboard')} apiKey={apiKey} companies={companies} showModal={showModal} />}
-                      {view === 'settings' && <SettingsTab isAuth={isAuth} trialCount={tc} onActivate={handleActivate} />}
-                  </div>
-                  <Modal isOpen={modal.open} title={modal.title} message={modal.message} type={modal.type} onClose={() => setModal({ ...modal, open: false })} onConfirm={modal.onConfirm ? () => { modal.onConfirm(); setModal({ ...modal, open: false }); } : null}/>
-                  <PromptModal isOpen={promptModal.open} title={promptModal.title} message={promptModal.message} placeholder={promptModal.placeholder} onClose={() => setPromptModal({ ...promptModal, open: false })} onConfirm={(val) => { promptModal.onConfirm(val); setPromptModal({ ...promptModal, open: false }); }}/>
               </div>
           );
       };
