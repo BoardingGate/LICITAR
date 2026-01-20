@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,16 +6,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>BoardingGate - LicitacionesPro</title>
     
-    <!-- Dependencias -->
+    <!-- ERUDA RESTAURADO -->
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>eruda.init();</script>
+    
     <script src="https://cdn.tailwindcss.com"></script>
+    
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
     
-    <!-- React & Babel -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -37,13 +40,12 @@
       .step-line { position: absolute; left: 15px; top: 40px; bottom: 0; width: 2px; background: #334155; z-index: 0; }
       
       @media print {
-        body { background: white; color: black; overflow: visible; height: auto; }
-        #root { display: block; height: auto; overflow: visible; }
+        body { background: white; color: black; }
         .no-print { display: none !important; }
         .print-only { display: block !important; }
-        .glass-panel { background: white; border: 1px solid #ccc; color: black; box-shadow: none; page-break-inside: avoid; }
+        .glass-panel { background: white; border: 1px solid #ccc; color: black; box-shadow: none; }
         .text-white { color: black !important; }
-        .text-slate-300, .text-slate-400, .text-slate-500 { color: #333 !important; }
+        .text-slate-400 { color: #555 !important; }
       }
     </style>
 </head>
@@ -54,28 +56,26 @@
       const { useState, useEffect, useMemo, useRef } = React;
       const { createRoot } = ReactDOM;
 
-      // --- CONFIGURACIÓN DE PLATAFORMAS ---
-      const TENDER_PLATFORMS = [
-          { key: 'placsp', keywords: ['ministerio', 'estatal', 'seguridad social', 'adif', 'aena', 'ine', 'estado'], name: 'Plataforma de Contratación del Sector Público (PLACSP)', url: 'https://contrataciondelestado.es/', note: 'Plataforma Estatal. Requiere Autofirma.' },
-          { key: 'catalunya', keywords: ['catalunya', 'cataluña', 'generalitat', 'catsalut', 'incasol'], name: 'Plataforma de Serveis de Contractació Pública', url: 'https://contractaciopublica.gencat.cat/', note: 'Requiere Sobre Digital. Valida la huella antes de las 12h.' },
-          { key: 'madrid', keywords: ['madrid', 'canal de isabel'], name: 'Portal de Contratación de Madrid', url: 'http://www.madrid.org/contratospublicos', note: 'Requiere Licit@. A veces redirige a PLACSP.' },
-          { key: 'andalucia', keywords: ['andalucía', 'andalucia', 'junta'], name: 'Plataforma de Contratación de Andalucía', url: 'https://www.juntadeandalucia.es/temas/contratacion-publica/perfiles-licitaciones/plataforma.html', note: 'Usa el componente SiREC. Prepara Java.' },
-          { key: 'euskadi', keywords: ['euskadi', 'vasco', 'vasca'], name: 'Contratación Pública en Euskadi', url: 'https://www.contratacion.euskadi.eus/', note: 'Requiere firma electrónica avanzada.' },
-          { key: 'galicia', keywords: ['galicia', 'xunta'], name: 'Contratos Públicos de Galicia', url: 'https://www.contratosdegalicia.gal/', note: 'Sistema propio. Clave o Certificado.' },
-          { key: 'valencia', keywords: ['valencia', 'valenciana', 'gva'], name: 'Plataforma de Contratación GVA', url: 'https://contratacion.gva.es/', note: 'Suele usar la PLACSP para presentación.' },
-          { key: 'canarias', keywords: ['canarias', 'gobierno de canarias'], name: 'Plataforma de Contratación de Canarias', url: 'https://www.gobiernodecanarias.org/hacienda/junta_consultiva/perfil_contratante/', note: 'Verificar si usa PLACSP o Vortal.' }
+      // --- PLATAFORMAS ---
+      const PLATFORMS = [
+          { id: 'placsp', keys: ['estatal', 'ministerio', 'adif', 'aena', 'seguridad social'], name: 'PLACSP (Estatal)', url: 'https://contrataciondelestado.es/' },
+          { id: 'cat', keys: ['catalunya', 'cataluña', 'generalitat', 'catsalut'], name: 'Plataforma Catalunya', url: 'https://contractaciopublica.gencat.cat/' },
+          { id: 'mad', keys: ['madrid', 'canal de isabel'], name: 'Portal Contratación Madrid', url: 'http://www.madrid.org/contratospublicos' },
+          { id: 'and', keys: ['andalucía', 'andalucia', 'junta'], name: 'Junta de Andalucía', url: 'https://www.juntadeandalucia.es/temas/contratacion-publica/perfiles-licitaciones/plataforma.html' },
+          { id: 'eus', keys: ['euskadi', 'vasco', 'vasca'], name: 'Contratación Euskadi', url: 'https://www.contratacion.euskadi.eus/' },
+          { id: 'gal', keys: ['galicia', 'xunta'], name: 'Contratos de Galicia', url: 'https://www.contratosdegalicia.gal/' },
+          { id: 'val', keys: ['valencia', 'gva'], name: 'Generalitat Valenciana', url: 'https://contratacion.gva.es/' }
       ];
 
-      const detectPlatform = (orgName) => {
-          if (!orgName) return TENDER_PLATFORMS[0]; 
-          const lower = orgName.toLowerCase();
-          const found = TENDER_PLATFORMS.find(p => p.keywords.some(k => lower.includes(k)));
-          return found || TENDER_PLATFORMS[0]; 
+      const getPlatform = (org) => {
+          if(!org) return PLATFORMS[0];
+          const lower = org.toLowerCase();
+          return PLATFORMS.find(p => p.keys.some(k => lower.includes(k))) || PLATFORMS[0];
       };
 
       // --- UTILS ---
       const _bg_check_sys = (k) => {
-          if (!k) return false; const d = new Date(); const val = (d.getFullYear() + (d.getMonth() + 1) + d.getDate()) * d.getDate();
+          if (!k) return false;const d = new Date();const val = (d.getFullYear() + (d.getMonth() + 1) + d.getDate()) * d.getDate();
           const hex = "BG-" + (val ^ 0x3E8).toString(16).toUpperCase(); 
           return k.trim().toUpperCase() === hex || k.trim() === val.toString();
       };
@@ -119,9 +119,9 @@
         Clock: (p) => <IconBase {...p}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></IconBase>,
         Copy: (p) => <IconBase {...p}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></IconBase>,
         Check: (p) => <IconBase {...p}><polyline points="20 6 9 17 4 12"/></IconBase>,
+        Printer: (p) => <IconBase {...p}><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></IconBase>,
         ChevronRight: (p) => <IconBase {...p}><polyline points="9 18 15 12 9 6"/></IconBase>,
-        ChevronDown: (p) => <IconBase {...p}><polyline points="6 9 12 15 18 9"/></IconBase>,
-        Printer: (p) => <IconBase {...p}><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></IconBase>
+        ChevronDown: (p) => <IconBase {...p}><polyline points="6 9 12 15 18 9"/></IconBase>
       };
 
       const CopyBtn = ({ text }) => {
@@ -138,7 +138,6 @@
           );
       };
 
-      // --- DATABASE ---
       const DB_NAME = 'LicitacionesProDB';
       const DB_STORES = { FILES: 'files', TENDERS: 'tenders', COMPANIES: 'companies' };
       
@@ -189,7 +188,6 @@
           }
       };
 
-      // --- AI LOGIC ---
       const askAIStrategy = async (apiKey, analysis, tenderContext, type) => {
           const savedModel = window.localStorage.getItem('gemini_model');
           const MODEL = savedModel ? JSON.parse(savedModel) : "gemini-1.5-flash"; 
@@ -213,7 +211,8 @@
                 TAREA:
                 1. Estima el riesgo de Baja Temeraria basándote en el tipo de contrato y la redacción del pliego sobre bajas anormales.
                 2. Sugiere un porcentaje de BAJA COMPETITIVA (para ganar) y uno CONSERVADOR.
-                3. IMPORTANTE: Dado que no tienes navegación en tiempo real, indica al usuario QUÉ TÉRMINOS Y WEBS DEBE BUSCAR en Google para validar los precios de mercado actuales (ej: 'Convenio colectivo limpieza Madrid 2024 tablas salariales', 'Precio tonelada acero actual', 'Licitaciones similares de [Organismo]'). Sé muy específico con las búsquedas.
+                3. Identifica si hay fórmulas de revisión de precios.
+                4. IMPORTANTE: Dado que no tienes navegación en tiempo real, indica al usuario QUÉ TÉRMINOS Y WEBS DEBE BUSCAR en Google para validar los precios de mercado actuales (ej: 'Convenio colectivo limpieza Madrid 2024 tablas salariales', 'Precio tonelada acero actual', 'Licitaciones similares de [Organismo]'). Sé muy específico con las búsquedas.
               `;
           } else if (type === 'technical') {
               prompt = `
@@ -226,6 +225,7 @@
                 TAREA:
                 Identifica los criterios de valoración subjetivos (Juicio de Valor) en el texto proporcionado.
                 Propón 3 MEJORAS TÉCNICAS o metodológicas CONCRETAS que encajen *perfectamente* con lo que pide este pliego.
+                No inventes mejoras genéricas. Si el pliego pide "Plan de Calidad", sugiere una mejora específica (ej: ISO específica). Si pide "Reducción de Plazo", calcula la óptima.
                 Justifica cada mejora citando por qué da puntos según el texto.
               `;
           }
@@ -245,7 +245,67 @@
       const analyzeTenderDocuments = async (apiKey, textContext) => {
           const savedModel = window.localStorage.getItem('gemini_model');
           const MODEL = savedModel ? JSON.parse(savedModel) : "gemini-1.5-flash"; 
-          const prompt = `Actúa como un Jefe de Estudios de Licitaciones de Obra Civil y Edificación (Bid Manager) con 20 años de experiencia. Analiza EXHAUSTIVAMENTE el texto del Pliego de Cláusulas Administrativas Particulares (PCAP) y/o Prescripciones Técnicas (PPT). Necesito extraer TODA la información crítica para preparar una oferta ganadora y no cometer errores administrativos. TEXTO PLIEGO: ${textContext.substring(0, 950000)}. Genera un JSON ESTRICTO con la siguiente estructura (si un dato no aparece, pon null): { "resumen_ejecutivo": { "organismo": "Ente contratante completo", "titulo_expediente": "Título exacto", "numero_expediente": "Código expediente", "objeto_detallado": "Descripción de la obra/servicio", "localizacion": "Lugar de ejecución (Municipio/Provincia)", "tipo_contrato": "Obras / Servicios / Suministros", "cpv": "Código CPV principal" }, "datos_economicos": { "pbl_sin_iva": 0.00 (número), "iva_pct": 21 (número), "valor_estimado": 0.00 (número, suele incluir prórrogas/modificados), "revision_precios": "SI/NO y fórmula si aplica brevemente", "abonos_cuenta": "SI/NO (pagos parciales)" }, "plazos_fechas": { "plazo_ejecucion": "Meses/Días", "fecha_limite_presentacion": "Fecha y hora si consta", "fecha_apertura_sobres": "Fechas si constan", "admision_prorrogas": "Detalle breve" }, "requisitos_admision": { "clasificacion_exigida": "Detalle exacto (Grupo, Subgrupo, Categoría)", "solvencia_economica": "Cifra de negocios requerida (años e importe)", "solvencia_tecnica": "Obras similares requeridas (importe, tipo, certificados a aportar)", "garantia_provisional": "Importe o %", "garantia_definitiva": "Importe o %", "adscripcion_medios": "Personal o maquinaria mínima obligatoria", "certificaciones_calidad": "ISO 9001, 14001, BIM, etc." }, "criterios_adjudicacion": { "formulas_automaticas": [ {"descripcion": "Ej: Precio", "puntos": 0, "formula_resumen": "Resumen fórmula (lineal, baja temeraria...)"}, {"descripcion": "Ej: Reducción plazo", "puntos": 0} ], "juicio_valor": [ {"descripcion": "Ej: Memoria Constructiva", "puntos": 0, "contenido_clave": "Qué piden detallar (Programa trabajo, calidad, etc)"}, {"descripcion": "Ej: Plan Medioambiental", "puntos": 0} ] }, "condiciones_especiales": { "subcontratacion": "Límites o requisitos", "penalidades": "Resumen penalidades por demora o incumplimiento", "condiciones_sociales": "Requisitos sociales/laborales especiales" } }`;
+          
+          const prompt = `
+            Actúa como un Jefe de Estudios de Licitaciones de Obra Civil y Edificación (Bid Manager) con 20 años de experiencia. 
+            Analiza EXHAUSTIVAMENTE el texto del Pliego de Cláusulas Administrativas Particulares (PCAP) y/o Prescripciones Técnicas (PPT).
+            
+            Necesito extraer TODA la información crítica para preparar una oferta ganadora y no cometer errores administrativos.
+            
+            TEXTO PLIEGO:
+            ${textContext.substring(0, 950000)}
+            
+            Genera un JSON ESTRICTO con la siguiente estructura (si un dato no aparece, pon null):
+            {
+                "resumen_ejecutivo": {
+                    "organismo": "Ente contratante completo",
+                    "titulo_expediente": "Título exacto",
+                    "numero_expediente": "Código expediente",
+                    "objeto_detallado": "Descripción de la obra/servicio",
+                    "localizacion": "Lugar de ejecución (Municipio/Provincia)",
+                    "tipo_contrato": "Obras / Servicios / Suministros",
+                    "cpv": "Código CPV principal"
+                },
+                "datos_economicos": {
+                    "pbl_sin_iva": 0.00 (número),
+                    "iva_pct": 21 (número),
+                    "valor_estimado": 0.00 (número, suele incluir prórrogas/modificados),
+                    "revision_precios": "SI/NO y fórmula si aplica brevemente",
+                    "abonos_cuenta": "SI/NO (pagos parciales)"
+                },
+                "plazos_fechas": {
+                    "plazo_ejecucion": "Meses/Días",
+                    "fecha_limite_presentacion": "Fecha y hora si consta",
+                    "fecha_apertura_sobres": "Fechas si constan",
+                    "admision_prorrogas": "Detalle breve"
+                },
+                "requisitos_admision": {
+                    "clasificacion_exigida": "Detalle exacto (Grupo, Subgrupo, Categoría)",
+                    "solvencia_economica": "Cifra de negocios requerida (años e importe)",
+                    "solvencia_tecnica": "Obras similares requeridas (importe, tipo, certificados a aportar)",
+                    "garantia_provisional": "Importe o %",
+                    "garantia_definitiva": "Importe o %",
+                    "adscripcion_medios": "Personal o maquinaria mínima obligatoria",
+                    "certificaciones_calidad": "ISO 9001, 14001, BIM, etc."
+                },
+                "criterios_adjudicacion": {
+                    "formulas_automaticas": [
+                        {"descripcion": "Ej: Precio", "puntos": 0, "formula_resumen": "Resumen fórmula (lineal, baja temeraria...)"},
+                        {"descripcion": "Ej: Reducción plazo", "puntos": 0}
+                    ],
+                    "juicio_valor": [
+                        {"descripcion": "Ej: Memoria Constructiva", "puntos": 0, "contenido_clave": "Qué piden detallar (Programa trabajo, calidad, etc)"},
+                        {"descripcion": "Ej: Plan Medioambiental", "puntos": 0}
+                    ]
+                },
+                "condiciones_especiales": {
+                    "subcontratacion": "Límites o requisitos",
+                    "penalidades": "Resumen penalidades por demora o incumplimiento",
+                    "condiciones_sociales": "Requisitos sociales/laborales especiales"
+                }
+            }
+          `;
+          
           try {
               const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`, {
                   method: 'POST',
@@ -264,25 +324,71 @@
           if(!analysis) return '';
           const div = "--------------------------------------------------------------------------------\n";
           const bigDiv = "================================================================================\n";
+          
           let t = bigDiv;
-          t += `INFORME TÉCNICO DE LICITACIÓN - BoardingGate\nFECHA DE GENERACIÓN: ${new Date().toLocaleString()}\n` + bigDiv + "\n";
-          t += "1. DATOS GENERALES DEL EXPEDIENTE\n" + div;
+          t += `INFORME TÉCNICO DE LICITACIÓN - BoardingGate\n`;
+          t += `FECHA DE GENERACIÓN: ${new Date().toLocaleString()}\n`;
+          t += bigDiv + "\n";
+          
+          t += "1. DATOS GENERALES DEL EXPEDIENTE\n";
+          t += div;
           t += `ORGANISMO CONTRATANTE:    ${analysis.resumen_ejecutivo?.organismo || 'No detectado'}\n`;
           t += `NÚMERO DE EXPEDIENTE:     ${analysis.resumen_ejecutivo?.numero_expediente || 'No detectado'}\n`;
           t += `TÍTULO DEL PROYECTO:      ${analysis.resumen_ejecutivo?.titulo_expediente || 'No detectado'}\n`;
           t += `LOCALIZACIÓN:             ${analysis.resumen_ejecutivo?.localizacion || 'No detectado'}\n`;
-          t += "2. DATOS ECONÓMICOS Y PLAZOS\n" + div;
+          t += `TIPO DE CONTRATO:         ${analysis.resumen_ejecutivo?.tipo_contrato || '-'}\n`;
+          t += `CÓDIGO CPV PRINCIPAL:     ${analysis.resumen_ejecutivo?.cpv || '-'}\n\n`;
+          t += `OBJETO DETALLADO:\n${analysis.resumen_ejecutivo?.objeto_detallado || 'Ver pliegos'}\n\n\n`;
+          
+          t += "2. DATOS ECONÓMICOS Y PLAZOS DE EJECUCIÓN\n";
+          t += div;
           t += `PRESUPUESTO BASE (PBL):   ${formatCurrency(analysis.datos_economicos?.pbl_sin_iva)} (Sin IVA)\n`;
           t += `VALOR ESTIMADO (VEC):     ${formatCurrency(analysis.datos_economicos?.valor_estimado)}\n`;
           t += `PLAZO DE EJECUCIÓN:       ${analysis.plazos_fechas?.plazo_ejecucion || 'Consultar'}\n`;
-          t += `FECHA LÍMITE OFERTAS:     ${analysis.plazos_fechas?.fecha_limite_presentacion || 'Consultar plataforma'}\n`;
-          t += "3. REQUISITOS DE SOLVENCIA\n" + div;
-          t += `CLASIFICACIÓN EXIGIDA:    ${analysis.requisitos_admision?.clasificacion_exigida || 'NO SE REQUIERE'}\n`;
+          t += `REVISIÓN DE PRECIOS:      ${analysis.datos_economicos?.revision_precios || 'No detectada'}\n`;
+          t += `FECHA LÍMITE OFERTAS:     ${analysis.plazos_fechas?.fecha_limite_presentacion || 'Consultar plataforma'}\n\n\n`;
+          
+          t += "3. REQUISITOS DE SOLVENCIA Y ADMISIÓN\n";
+          t += div;
+          t += `CLASIFICACIÓN EXIGIDA:    ${analysis.requisitos_admision?.clasificacion_exigida || 'NO SE REQUIERE'}\n\n`;
+          t += "SOLVENCIA TÉCNICA REQUERIDA:\n";
+          t += `${analysis.requisitos_admision?.solvencia_tecnica || 'Según lo establecido en el PCAP.'}\n\n`;
+          t += "SOLVENCIA ECONÓMICA REQUERIDA:\n";
+          t += `${analysis.requisitos_admision?.solvencia_economica || 'Según lo establecido en el PCAP.'}\n\n`;
           t += `GARANTÍA PROVISIONAL:     ${analysis.requisitos_admision?.garantia_provisional || 'NO'}\n`;
+          t += `ADSCRIPCIÓN DE MEDIOS:    ${analysis.requisitos_admision?.adscripcion_medios || 'Ver pliegos'}\n\n\n`;
+
+          t += "4. CRITERIOS DE VALORACIÓN DE OFERTAS\n";
+          t += div;
+          if(analysis.criterios_adjudicacion?.formulas_automaticas?.length > 0){
+              t += "A) CRITERIOS EVALUABLES MEDIANTE FÓRMULAS (AUTOMÁTICOS):\n";
+              analysis.criterios_adjudicacion.formulas_automaticas.forEach(c => {
+                  t += `   - ${c.descripcion.toUpperCase()}: ${c.puntos} Puntos\n`;
+                  if(c.formula_resumen) t += `     (Detalle: ${c.formula_resumen})\n`;
+              });
+              t += "\n";
+          }
+          
+          if(analysis.criterios_adjudicacion?.juicio_valor?.length > 0){
+              t += "B) CRITERIOS DEPENDIENTES DE JUICIO DE VALOR (MEMORIA TÉCNICA):\n";
+              analysis.criterios_adjudicacion.juicio_valor.forEach(c => {
+                  t += `   - ${c.descripcion.toUpperCase()}: ${c.puntos} Puntos\n`;
+                  if(c.contenido_clave) t += `     (Claves: ${c.contenido_clave})\n`;
+              });
+              t += "\n";
+          }
+          t += "\n";
+          
+          t += "5. CONDICIONES ESPECIALES Y PENALIDADES\n";
+          t += div;
+          if(analysis.condiciones_especiales?.subcontratacion) t += `SUBCONTRATACIÓN: ${analysis.condiciones_especiales.subcontratacion}\n`;
+          if(analysis.condiciones_especiales?.penalidades) t += `PENALIDADES: ${analysis.condiciones_especiales.penalidades}\n`;
+          t += "\n";
+          t += bigDiv;
+          
           return t;
       };
 
-      // --- COMPONENTS ---
       const Modal = ({ isOpen, title, message, type, onClose, onConfirm }) => {
           if (!isOpen) return null;
           return (
@@ -316,7 +422,15 @@
                   <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-8 shadow-2xl">
                       <h3 className="text-xl font-bold text-white mb-2 uppercase">{title}</h3>
                       <p className="text-slate-400 text-sm mb-4">{message}</p>
-                      <input autoFocus type="text" className="input-std mb-6" placeholder={placeholder} value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') onConfirm(val); }} />
+                      <input 
+                          autoFocus
+                          type="text" 
+                          className="input-std mb-6" 
+                          placeholder={placeholder} 
+                          value={val} 
+                          onChange={e=>setVal(e.target.value)}
+                          onKeyDown={e => { if(e.key === 'Enter') onConfirm(val); }} 
+                      />
                       <div className="flex gap-3">
                           <button onClick={() => { setVal(''); onClose(); }} className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-colors">CANCELAR</button>
                           <button onClick={() => { onConfirm(val); setVal(''); }} disabled={!val.trim()} className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-colors disabled:opacity-50">ACEPTAR</button>
@@ -344,8 +458,14 @@
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ contents: [{ parts: [{ text: "OK" }] }] })
                   });
-                  if(response.ok) { setTestStatus('success'); } 
-                  else { const err = await response.json(); let errMsg = err.error ? `${err.error.code}: ${err.error.message}` : JSON.stringify(err); setTestStatus('error'); setErrorDetail(errMsg); }
+                  if(response.ok) {
+                      setTestStatus('success');
+                  } else {
+                      const err = await response.json();
+                      let errMsg = err.error ? `${err.error.code}: ${err.error.message}` : JSON.stringify(err);
+                      setTestStatus('error');
+                      setErrorDetail(errMsg);
+                  }
               } catch(e) { setTestStatus('error'); setErrorDetail(e.message); }
           };
 
@@ -363,6 +483,7 @@
                                   <input type={showKey ? "text" : "password"} value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="AIzaSy..." className="w-full bg-black/50 border border-slate-600 rounded-xl p-4 pr-12 text-white focus:border-purple-500 focus:outline-none font-mono"/>
                                   <button onClick={() => setShowKey(!showKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">{showKey ? <Icons.EyeOff size={20}/> : <Icons.Eye size={20}/>}</button>
                               </div>
+                              
                               <div className="flex gap-4 items-end">
                                   <div className="flex-1">
                                       <label className="block text-xs font-bold text-slate-400 mb-1">Modelo de IA</label>
@@ -375,29 +496,65 @@
                               </div>
                               {testStatus === 'error' && <div className="mt-4 p-4 bg-red-900/30 border border-red-500/50 rounded-xl text-red-200 text-xs font-mono whitespace-pre-wrap">{errorDetail}</div>}
                           </div>
+                          
+                          <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4">
+                              <h4 className="text-blue-400 font-bold text-sm mb-2 flex items-center gap-2"><Icons.HelpCircle size={16}/> ¿Cómo obtener la API Key?</h4>
+                              <ol className="text-sm text-slate-300 space-y-3 list-decimal pl-4 mb-4">
+                                  <li>Accede a <strong>Google AI Studio</strong> con tu cuenta de Google (botón abajo).</li>
+                                  <li>Si es tu primera vez, acepta los términos de uso.</li>
+                                  <li>Haz clic en el botón azul <strong>"Get API key"</strong> en la esquina superior izquierda.</li>
+                                  <li>En el cuadro emergente, haz clic en <strong>"Create API key in new project"</strong>.</li>
+                                  <li>Se generará una clave que empieza por "AIza...". Cópiala.</li>
+                                  <li>Vuelve aquí y <strong>pega la clave en el campo "Google Gemini API Key"</strong> de este formulario.</li>
+                              </ol>
+                              <a href="https://aistudio.google.com/app/apikey" target="_blank" className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-lg"><Icons.ExternalLink size={16}/> Ir a Google AI Studio</a>
+                          </div>
                       </div>
                   </div>
+
                   <div className="max-w-2xl w-full bg-slate-900/80 border border-slate-800 rounded-2xl p-8 shadow-2xl mb-20">
                       <div className="flex items-center gap-4 mb-6 border-b border-slate-700 pb-4">
                           <div className={`p-3 rounded-xl ${isAuth ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'}`}><Icons.CheckCircle size={32} /></div>
                           <div><h2 className="text-2xl font-bold text-white">Registro de la aplicación</h2><p className="text-slate-400 text-sm">Estado de la instalación y licencia</p></div>
                       </div>
+                      
                       <div className="space-y-6">
+                          <p className="text-sm text-slate-400 leading-relaxed italic">
+                              Esta plataforma es un proyecto independiente que se sustenta exclusivamente mediante un modelo de <strong>crowdfunding</strong> y las aportaciones directas de sus usuarios.
+                          </p>
+
                           <div className="bg-black/30 border border-slate-700 rounded-xl p-5">
                               <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Número de Registro / Código de Instalación</label>
                               <div className="flex gap-3">
-                                  <input type="text" value={localLic} onChange={(e) => setLocalLic(e.target.value.toUpperCase())} placeholder="BG-XXXX-XXXX" className={`flex-1 bg-slate-900 border ${isAuth ? 'border-green-600' : 'border-slate-600'} rounded-lg p-3 text-white font-mono focus:outline-none`}/>
+                                  <input 
+                                      type="text" 
+                                      value={localLic} 
+                                      onChange={(e) => setLocalLic(e.target.value.toUpperCase())}
+                                      placeholder="BG-XXXX-XXXX" 
+                                      className={`flex-1 bg-slate-900 border ${isAuth ? 'border-green-600' : 'border-slate-600'} rounded-lg p-3 text-white font-mono focus:outline-none`} 
+                                  />
                                   <button onClick={() => onActivate(localLic)} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-xs">ACTIVAR</button>
                               </div>
                               {isAuth && <div className="mt-3 text-center text-green-400 text-xs font-bold uppercase tracking-widest">● Dispositivo Registrado</div>}
                           </div>
+
                           {!isAuth && (
                               <div className="flex justify-between items-center bg-blue-900/10 border border-blue-500/30 rounded-xl p-4">
-                                  <div className="text-sm text-blue-200">Periodo de cortesía consumido: <span className="font-bold ml-1">{trialCount} de 10 licitaciones</span></div>
-                                  <div className="w-24 h-2 bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-blue-500" style={{width: `${(Math.min(trialCount,10)/10)*100}%`}}></div></div>
+                                  <div className="text-sm text-blue-200">
+                                      Periodo de cortesía consumido: <span className="font-bold ml-1">{trialCount} de 10 licitaciones</span>
+                                  </div>
+                                  <div className="w-24 h-2 bg-slate-800 rounded-full overflow-hidden">
+                                      <div className="h-full bg-blue-500" style={{width: `${(Math.min(trialCount,10)/10)*100}%`}}></div>
+                                  </div>
                               </div>
                           )}
-                          <div className="text-center bg-slate-800/50 p-4 rounded-xl"><p className="text-xs text-slate-400 mb-2">Para obtener tu Nº de registro o colaborar con el crowdfunding:</p><a href="https://x.com/BoardingGate" target="_blank" className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 font-bold transition-colors"><Icons.Globe size={16}/> @BoardingGate en X (Twitter)</a></div>
+
+                          <div className="text-center bg-slate-800/50 p-4 rounded-xl">
+                              <p className="text-xs text-slate-400 mb-2">Para obtener tu Nº de registro o colaborar con el crowdfunding:</p>
+                              <a href="https://x.com/BoardingGate" target="_blank" className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 font-bold transition-colors">
+                                  <Icons.Globe size={16}/> @BoardingGate en X (Twitter)
+                              </a>
+                          </div>
                       </div>
                   </div>
               </div>
@@ -410,7 +567,10 @@
           const [processing, setProcessing] = useState(false);
           const [logoPreview, setLogoPreview] = useState(null);
 
-          const defaultCompany = { id: null, name: '', cif: '', address: '', repName: '', repDni: '', notary: '', registryData: '', classification: '', recurringDocs: [], logoId: null };
+          const defaultCompany = {
+              id: null, name: '', cif: '', address: '', repName: '', repDni: '',
+              notary: '', registryData: '', classification: '', recurringDocs: [], logoId: null
+          };
 
           const handleEdit = async (c) => { 
               setForm(c || { ...defaultCompany, id: Date.now() }); 
@@ -419,7 +579,9 @@
                   const blob = await dbActions.get(DB_STORES.FILES, c.logoId);
                   if(blob) setLogoPreview(URL.createObjectURL(blob));
                   else setLogoPreview(null);
-              } else { setLogoPreview(null); }
+              } else {
+                  setLogoPreview(null);
+              }
           };
           
           const handleSave = async () => {
@@ -440,10 +602,16 @@
           const handleUploadDoc = async (e) => {
               const file = e.target.files[0];
               if(!file) return;
+              const docName = file.name; 
+              
               setProcessing(true);
               const fileId = `doc_${Date.now()}`;
               await dbActions.put(DB_STORES.FILES, fileId, file); 
-              setForm(prev => ({ ...prev, recurringDocs: [...prev.recurringDocs, { name: file.name, fileId, fileName: file.name }] }));
+              
+              setForm(prev => ({
+                  ...prev,
+                  recurringDocs: [...prev.recurringDocs, { name: docName, fileId, fileName: file.name }]
+              }));
               setProcessing(false);
           };
 
@@ -457,7 +625,11 @@
           };
           
           const removeLogo = async () => {
-              if(form.logoId) { await dbActions.del(DB_STORES.FILES, form.logoId); setLogoPreview(null); setForm(prev => ({ ...prev, logoId: null })); }
+              if(form.logoId) {
+                  await dbActions.del(DB_STORES.FILES, form.logoId);
+                  setLogoPreview(null);
+                  setForm(prev => ({ ...prev, logoId: null }));
+              }
           };
 
           const removeDoc = async (idx) => {
@@ -474,31 +646,42 @@
                           <h2 className="text-2xl font-display font-bold text-white flex items-center gap-2"><Icons.Building className="text-blue-500"/> {form.id ? 'Editar Empresa' : 'Nueva Empresa'}</h2>
                           <button onClick={() => setMode('list')} className="text-sm text-slate-400 hover:text-white">Cancelar</button>
                       </div>
+                      
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                           <div className="md:col-span-2 flex items-center gap-4 bg-slate-800/50 p-4 rounded-xl border border-slate-700">
                               <div className="w-16 h-16 rounded bg-slate-900 border border-slate-600 flex items-center justify-center overflow-hidden relative group">
                                   {logoPreview ? <img src={logoPreview} alt="Logo" className="w-full h-full object-contain" /> : <Icons.Image className="text-slate-600"/>}
                               </div>
                               <div className="flex-1">
-                                  <label className="text-xs font-bold text-slate-300 block mb-1">Logotipo</label>
+                                  <label className="text-xs font-bold text-slate-300 block mb-1">Logotipo / Membrete</label>
+                                  <p className="text-[10px] text-slate-500 mb-2">Aparecerá en los documentos generados.</p>
                                   <div className="flex gap-2">
-                                      <label className="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded text-xs text-white cursor-pointer inline-flex items-center gap-2 transition-colors"><Icons.Upload size={12}/> Subir<input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} /></label>
+                                      <label className="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded text-xs text-white cursor-pointer inline-flex items-center gap-2 transition-colors">
+                                          <Icons.Upload size={12}/> Subir
+                                          <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+                                      </label>
                                       {form.logoId && <button onClick={removeLogo} className="bg-red-900/20 hover:bg-red-900/40 text-red-400 px-3 py-1 rounded text-xs flex items-center gap-2"><Icons.Trash2 size={12}/> Eliminar</button>}
                                   </div>
                               </div>
                           </div>
+
                           <div><label className="text-xs text-slate-400 font-bold mb-1 block">Razón Social</label><input className="input-std" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} placeholder="Construcciones S.L." /></div>
                           <div><label className="text-xs text-slate-400 font-bold mb-1 block">CIF / NIF</label><input className="input-std" value={form.cif} onChange={e=>setForm({...form, cif:e.target.value})} placeholder="B-12345678" /></div>
                           <div className="md:col-span-2"><label className="text-xs text-slate-400 font-bold mb-1 block">Domicilio Social</label><input className="input-std" value={form.address} onChange={e=>setForm({...form, address:e.target.value})} placeholder="C/ Mayor, 1, Madrid" /></div>
+                          
                           <div><label className="text-xs text-slate-400 font-bold mb-1 block">Representante Legal</label><input className="input-std" value={form.repName} onChange={e=>setForm({...form, repName:e.target.value})} /></div>
                           <div><label className="text-xs text-slate-400 font-bold mb-1 block">DNI Representante</label><input className="input-std" value={form.repDni} onChange={e=>setForm({...form, repDni:e.target.value})} /></div>
-                          <div className="md:col-span-2"><label className="text-xs text-slate-400 font-bold mb-1 block">Datos Notariales</label><textarea className="input-std h-20" value={form.notary} onChange={e=>setForm({...form, notary:e.target.value})} placeholder="Ante D. ..., Notario de ..., nº protocolo..." /></div>
+                          
+                          <div className="md:col-span-2"><label className="text-xs text-slate-400 font-bold mb-1 block">Datos Notariales (Escritura/Poderes)</label><textarea className="input-std h-20" value={form.notary} onChange={e=>setForm({...form, notary:e.target.value})} placeholder="Ante D. ..., Notario de ..., nº protocolo..." /></div>
                           <div className="md:col-span-2"><label className="text-xs text-slate-400 font-bold mb-1 block">Datos Registrales</label><input className="input-std" value={form.registryData} onChange={e=>setForm({...form, registryData:e.target.value})} placeholder="Tomo X, Libro Y, Folio Z..." /></div>
+                          
                           <div className="md:col-span-2 p-4 bg-blue-900/10 border border-blue-500/30 rounded-xl">
                              <label className="text-sm text-blue-400 font-bold mb-2 block flex items-center gap-2"><Icons.CheckCircle size={16}/> Clasificación de Contratista</label>
                              <input className="input-std bg-slate-900/50" value={form.classification} onChange={e=>setForm({...form, classification:e.target.value})} placeholder="Ej: Grupo C, Subgrupo 02, Categoría 4 (C-02-4)" />
+                             <p className="text-[10px] text-slate-500 mt-1">Este dato se usará para comprobar automáticamente la solvencia en los pliegos.</p>
                           </div>
                       </div>
+
                       <div className="glass-panel p-6 rounded-xl mb-8 border-dashed border-slate-600">
                           <div className="flex justify-between items-center mb-4">
                               <h3 className="text-sm font-bold text-white flex items-center gap-2"><Icons.FileText/> Documentación Recurrente</h3>
@@ -508,18 +691,25 @@
                               </label>
                           </div>
                           <div className="space-y-2">
+                              {form.recurringDocs.length === 0 && <p className="text-xs text-slate-500 italic">Sin documentos guardados (Ej: Certificados Hacienda, ISOs, Escrituras...)</p>}
                               {form.recurringDocs.map((doc, i) => (
                                   <div key={i} className="flex items-center justify-between bg-slate-800 p-2 rounded border border-slate-700">
                                       <div className="flex items-center gap-3">
                                           <div className="bg-red-500/20 p-1.5 rounded text-red-400"><Icons.FileText size={16}/></div>
-                                          <div><div className="text-sm font-bold text-slate-200">{doc.name}</div><div className="text-[10px] text-slate-500">{doc.fileName}</div></div>
+                                          <div>
+                                              <div className="text-sm font-bold text-slate-200">{doc.name}</div>
+                                              <div className="text-[10px] text-slate-500">{doc.fileName}</div>
+                                          </div>
                                       </div>
                                       <button onClick={()=>removeDoc(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={16}/></button>
                                   </div>
                               ))}
                           </div>
                       </div>
-                      <div className="flex gap-4"><button onClick={handleSave} className="flex-1 btn-primary py-3 rounded-xl shadow-lg shadow-blue-900/20">GUARDAR EMPRESA</button></div>
+
+                      <div className="flex gap-4">
+                          <button onClick={handleSave} className="flex-1 btn-primary py-3 rounded-xl shadow-lg shadow-blue-900/20">GUARDAR EMPRESA</button>
+                      </div>
                   </div>
               </div>
           );
@@ -530,7 +720,13 @@
                       <h2 className="text-3xl font-display font-bold text-white tracking-tight">Mis Empresas</h2>
                       <button onClick={()=>handleEdit(null)} className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2 shadow-lg"><Icons.Plus/> Nueva Empresa</button>
                   </div>
-                  {companies && companies.length > 0 ? (
+                  
+                  {companies.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-64 text-slate-500">
+                          <Icons.Building size={48} className="mb-4 opacity-50"/>
+                          <p>No tienes empresas registradas.</p>
+                      </div>
+                  ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-20">
                           {companies.map(c => (
                               <div key={c.id} className="glass-panel p-6 rounded-2xl group relative hover:border-blue-500/50 transition-colors">
@@ -550,11 +746,6 @@
                               </div>
                           ))}
                       </div>
-                  ) : (
-                      <div className="flex flex-col items-center justify-center h-64 text-slate-500">
-                          <Icons.Building size={48} className="mb-4 opacity-50"/>
-                          <p>No tienes empresas registradas.</p>
-                      </div>
                   )}
               </div>
           );
@@ -565,14 +756,19 @@
           const [localTender, setLocalTender] = useState(tender);
           const [isAnalyzing, setIsAnalyzing] = useState(false);
           const [pdfProcessing, setPdfProcessing] = useState(false);
+          
           const [costes, setCostes] = useState(0);
           const [margen, setMargen] = useState(10); 
           const [baja, setBaja] = useState(0);
+          
           const [selectedCompanyId, setSelectedCompanyId] = useState('');
           const [reportVisible, setReportVisible] = useState(false);
           const [offerStep, setOfferStep] = useState(0);
+
           const [aiAdvice, setAiAdvice] = useState({ economic: '', technical: '' });
           const [loadingAdvice, setLoadingAdvice] = useState(false);
+
+          // Envelope Files State (Init from Tender or empty)
           const [envelopeFiles, setEnvelopeFiles] = useState({ A: [], B: [], C: [] });
 
           useEffect(() => { if (localTender.envelopeFiles) { setEnvelopeFiles(localTender.envelopeFiles); } }, []);
@@ -583,7 +779,14 @@
           }, [envelopeFiles]);
 
           const pbl = localTender.analysis?.datos_economicos?.pbl_sin_iva || 0;
-          useEffect(() => { if(pbl > 0) { const precioVenta = costes * (1 + (margen/100)); } }, [costes, margen]);
+          
+          useEffect(() => {
+              if(pbl > 0) {
+                  const precioVenta = costes * (1 + (margen/100));
+                  // const nuevaBaja = ((pbl - precioVenta) / pbl) * 100;
+              }
+          }, [costes, margen]);
+
           const precioOfertado = pbl * (1 - (baja/100));
           const beneficio = precioOfertado - costes;
 
@@ -600,9 +803,15 @@
                       const textContent = await page.getTextContent();
                       fullText += textContent.items.map(item => item.str).join(' ') + "\n";
                   }
+                  
                   const fileId = `${localTender.id}_${Date.now()}`;
                   await dbActions.put(DB_STORES.FILES, fileId, file); 
-                  setLocalTender(prev => ({ ...prev, files: [...prev.files, { id: fileId, name: file.name }], rawText: (prev.rawText || "") + fullText }));
+                  
+                  setLocalTender(prev => ({
+                      ...prev,
+                      files: [...prev.files, { id: fileId, name: file.name }],
+                      rawText: (prev.rawText || "") + fullText
+                  }));
               } catch (err) { console.error(err); showModal('Error', 'No se pudo leer el PDF.', 'danger'); }
               finally { setPdfProcessing(false); }
           };
@@ -612,7 +821,10 @@
               if (!file) return;
               const fileId = `env_${envelopeType}_${Date.now()}`;
               await dbActions.put(DB_STORES.FILES, fileId, file);
-              setEnvelopeFiles(prev => ({ ...prev, [envelopeType]: [...prev[envelopeType], { id: fileId, name: file.name }] }));
+              setEnvelopeFiles(prev => ({
+                  ...prev,
+                  [envelopeType]: [...prev[envelopeType], { id: fileId, name: file.name }]
+              }));
           };
 
           const deleteEnvelopeFile = async (envelopeType, idx) => {
@@ -634,6 +846,7 @@
           const runAnalysis = async () => {
               if(!localTender.rawText) { showModal('Aviso', 'Sube documentos (PCAP) primero.', 'warning'); return; }
               if(!apiKey) { showModal('Error', 'Configura la API Key primero en la pestaña Config.', 'danger'); return; }
+              
               setIsAnalyzing(true);
               try {
                   const analysis = await analyzeTenderDocuments(apiKey, localTender.rawText);
@@ -665,28 +878,69 @@
               const c = companies.find(x=>x.id == selectedCompanyId);
               const t = localTender.analysis;
               const date = new Date().toLocaleDateString('es-ES', {year: 'numeric', month: 'long', day: 'numeric'});
-              let letter = `${c.name}\n${c.address}\nCIF: ${c.cif}\n--------------------------------------------------------\n\n`;
+              
+              let letter = "";
+              letter += `${c.name}\n${c.address}\nCIF: ${c.cif}\n`;
+              letter += "--------------------------------------------------------\n\n";
+              
               letter += `A la Mesa de Contratación de:\n${t?.resumen_ejecutivo?.organismo || '[ORGANISMO]'}\n\n`;
-              letter += `REFERENCIA: Expediente Nº ${t?.resumen_ejecutivo?.numero_expediente || '[NUMERO]'}\nOBJETO: ${t?.resumen_ejecutivo?.titulo_expediente || '[TITULO]'}\n\n`;
-              letter += `En ${t?.resumen_ejecutivo?.localizacion || '[LUGAR]'}, a ${date}\n\nMuy Sres. míos:\n\n`;
-              letter += `D. ${c.repName}, con DNI nº ${c.repDni}, actuando en nombre y representación de la entidad mercantil ${c.name}, con domicilio social en ${c.address} y CIF ${c.cif}, enterado de las condiciones y requisitos que se exigen para la adjudicación del contrato de referencia.\n\nEXPONE:\n\n`;
+              
+              letter += `REFERENCIA: Expediente Nº ${t?.resumen_ejecutivo?.numero_expediente || '[NUMERO]'}\n`;
+              letter += `OBJETO: ${t?.resumen_ejecutivo?.titulo_expediente || '[TITULO]'}\n\n`;
+              
+              letter += `En ${t?.resumen_ejecutivo?.localizacion || '[LUGAR]'}, a ${date}\n\n`;
+              
+              letter += "Muy Sres. míos:\n\n";
+              
+              letter += `D. ${c.repName}, con DNI nº ${c.repDni}, actuando en nombre y representación de la entidad mercantil ${c.name}, con domicilio social en ${c.address} y CIF ${c.cif}, enterado de las condiciones y requisitos que se exigen para la adjudicación del contrato de referencia.\n\n`;
+              
+              letter += "EXPONE:\n\n";
+              
               letter += "I. Que conoce el Pliego de Cláusulas Administrativas Particulares y demás documentación rectora del contrato, aceptándolos íntegramente.\n\n";
+              
               letter += "II. Que la empresa que represento cumple con todos los requisitos y condiciones exigidos para contratar con la Administración.\n\n";
-              letter += `III. Que se compromete a la ejecución del contrato por el siguiente importe:\n\n   PRECIO OFERTADO (SIN IVA):  ${formatCurrency(precioOfertado)}\n   BAJA APLICADA:              ${baja.toFixed(2)} %\n\n`;
-              letter += "Quedando a su disposición para cuanta información consideren oportuna.\n\nAtentamente,\n\n\n\n__________________________\n";
-              letter += `Fdo: ${c.repName}\nAdministrador / Apoderado`;
+              
+              letter += "III. Que se compromete a la ejecución del contrato por el siguiente importe:\n\n";
+              
+              letter += `   PRECIO OFERTADO (SIN IVA):  ${formatCurrency(precioOfertado)}\n`;
+              letter += `   BAJA APLICADA:              ${baja.toFixed(2)} %\n\n`;
+              
+              letter += "Quedando a su disposición para cuanta información consideren oportuna.\n\n";
+              
+              letter += "Atentamente,\n\n\n\n";
+              
+              letter += "__________________________\n";
+              letter += `Fdo: ${c.repName}\n`;
+              letter += "Administrador / Apoderado";
+              
               return letter;
           };
 
           const renderBidAssistant = () => {
-              if(!localTender.analysis) return ( <div className="text-center py-20"><p className="text-slate-400 mb-4">Para iniciar el asistente de licitación, primero debes analizar los pliegos.</p><button onClick={()=>setActiveTab(1)} className="text-blue-400 hover:underline">Ir a Documentos</button></div> );
+              if(!localTender.analysis) return (
+                  <div className="text-center py-20">
+                      <p className="text-slate-400 mb-4">Para iniciar el asistente de licitación, primero debes analizar los pliegos.</p>
+                      <button onClick={()=>setActiveTab(1)} className="text-blue-400 hover:underline">Ir a Documentos</button>
+                  </div>
+              );
+
               const detectedPlatform = detectPlatform(localTender.analysis.resumen_ejecutivo.organismo);
+
               return (
                   <div className="max-w-4xl mx-auto space-y-6 pb-20 fade-in no-print">
                       <div className="bg-gradient-to-r from-blue-900/40 to-slate-900 border border-blue-500/30 p-6 rounded-2xl flex items-start gap-4">
-                          <div className="bg-blue-600 p-3 rounded-full shadow-lg shadow-blue-500/30"><Icons.BrainCircuit size={32} className="text-white"/></div>
-                          <div><h3 className="text-xl font-bold text-white mb-2">Asistente de Licitación "Llave en Mano"</h3><p className="text-slate-300 text-sm leading-relaxed">Hola. Soy tu Bid Manager. Te guiaré paso a paso para construir la oferta perfecta. Puedes adjuntar archivos reales a cada sobre, generar documentos y consultar a la IA para mejorar tu estrategia.</p></div>
+                          <div className="bg-blue-600 p-3 rounded-full shadow-lg shadow-blue-500/30">
+                              <Icons.BrainCircuit size={32} className="text-white"/>
+                          </div>
+                          <div>
+                              <h3 className="text-xl font-bold text-white mb-2">Asistente de Licitación "Llave en Mano"</h3>
+                              <p className="text-slate-300 text-sm leading-relaxed">
+                                  Hola. Soy tu Bid Manager. Te guiaré paso a paso para construir la oferta perfecta. 
+                                  Puedes adjuntar archivos reales a cada sobre, generar documentos y consultar a la IA para mejorar tu estrategia.
+                              </p>
+                          </div>
                       </div>
+
                       <div className="glass-panel p-6 rounded-xl">
                           <label className="text-xs text-slate-400 font-bold block mb-2 uppercase">1. Selección de Empresa Licitadora</label>
                           <select className="input-std" value={selectedCompanyId} onChange={e=>setSelectedCompanyId(e.target.value)}>
@@ -695,113 +949,275 @@
                           </select>
                           {selectedCompanyId && <div className="mt-2 text-green-400 text-xs flex items-center gap-2"><Icons.Check size={14}/> Empresa seleccionada correctamente.</div>}
                       </div>
+
                       <div className="relative pl-8 space-y-8">
                           <div className="step-line"></div>
+
+                          {/* STEP 1 */}
                           <div className={`relative transition-all duration-500 ${offerStep >= 0 ? 'opacity-100 translate-x-0' : 'opacity-50 translate-x-4'}`}>
-                              <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep > 0 ? 'bg-green-500 border-green-500 text-black' : 'bg-slate-900 border-blue-500 text-blue-500'} font-bold z-10 transition-colors`}>{offerStep > 0 ? <Icons.Check size={16}/> : '1'}</div>
+                              <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep > 0 ? 'bg-green-500 border-green-500 text-black' : 'bg-slate-900 border-blue-500 text-blue-500'} font-bold z-10 transition-colors`}>
+                                  {offerStep > 0 ? <Icons.Check size={16}/> : '1'}
+                              </div>
                               <div className="glass-panel rounded-xl overflow-hidden">
-                                  <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex justify-between cursor-pointer" onClick={()=>setOfferStep(0)}><h4 className="font-bold text-white">Estrategia y Plazos</h4>{offerStep === 0 ? <Icons.ChevronDown/> : <Icons.ChevronRight/>}</div>
+                                  <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex justify-between cursor-pointer" onClick={()=>setOfferStep(0)}>
+                                      <h4 className="font-bold text-white">Estrategia y Plazos</h4>
+                                      {offerStep === 0 ? <Icons.ChevronDown/> : <Icons.ChevronRight/>}
+                                  </div>
                                   {offerStep === 0 && (
                                       <div className="p-6 space-y-4">
                                           <div className="bg-blue-900/20 p-4 rounded-lg border-l-4 border-blue-500">
                                               <h5 className="font-bold text-blue-300 text-sm mb-2">Fechas Clave</h5>
-                                              <p className="text-sm text-slate-300">La fecha límite es el <strong className="text-white">{localTender.analysis.plazos_fechas?.fecha_limite_presentacion || 'NO DEFINIDA'}</strong>. {localTender.analysis.plazos_fechas?.fecha_limite_presentacion && new Date(localTender.analysis.plazos_fechas.fecha_limite_presentacion) < new Date() ? <span className="text-red-400 font-bold block mt-1">¡CUIDADO! El plazo parece haber expirado.</span> : <span className="text-green-400 block mt-1">Estamos en plazo. Procedemos.</span>}</p>
+                                              <p className="text-sm text-slate-300">
+                                                  La fecha límite es el <strong className="text-white">{localTender.analysis.plazos_fechas?.fecha_limite_presentacion || 'NO DEFINIDA'}</strong>. 
+                                                  {localTender.analysis.plazos_fechas?.fecha_limite_presentacion && new Date(localTender.analysis.plazos_fechas.fecha_limite_presentacion) < new Date() ? 
+                                                      <span className="text-red-400 font-bold block mt-1">¡CUIDADO! El plazo parece haber expirado. Verifica en la plataforma.</span> : 
+                                                      <span className="text-green-400 block mt-1">Estamos en plazo. Procedemos.</span>
+                                                  }
+                                              </p>
                                           </div>
+                                          
                                           <div className="bg-slate-800 p-4 rounded-lg">
-                                              <div className="flex justify-between items-center mb-2"><h5 className="font-bold text-white text-sm flex items-center gap-2"><Icons.BrainCircuit size={16}/> Análisis de Riesgos y Estrategia</h5><button onClick={()=>getAdvice('economic')} className="text-xs bg-blue-600 px-3 py-1 rounded text-white font-bold hover:bg-blue-500">{loadingAdvice ? <Icons.Loader/> : 'Consultar a la IA'}</button></div>
-                                              <div className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">{aiAdvice.economic || "Pulsa el botón para que la IA analice el mercado y sugiera una estrategia."}</div>
+                                              <div className="flex justify-between items-center mb-2">
+                                                 <h5 className="font-bold text-white text-sm flex items-center gap-2"><Icons.BrainCircuit size={16}/> Análisis de Riesgos y Estrategia</h5>
+                                                 <button onClick={()=>getAdvice('economic')} className="text-xs bg-blue-600 px-3 py-1 rounded text-white font-bold hover:bg-blue-500">{loadingAdvice ? <Icons.Loader/> : 'Consultar a la IA'}</button>
+                                              </div>
+                                              <div className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">
+                                                  {aiAdvice.economic || "Pulsa el botón para que la IA analice el mercado, estime la baja temeraria y sugiera una estrategia de precios ganadora."}
+                                              </div>
                                           </div>
-                                          <div className="flex justify-end"><button onClick={()=>setOfferStep(1)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Continuar al Sobre A &rarr;</button></div>
+
+                                          <div className="flex justify-end">
+                                              <button onClick={()=>setOfferStep(1)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Continuar al Sobre A &rarr;</button>
+                                          </div>
                                       </div>
                                   )}
                               </div>
                           </div>
+
+                          {/* STEP 2 */}
                           <div className={`relative transition-all duration-500 ${offerStep >= 1 ? 'opacity-100 translate-x-0' : 'opacity-50 translate-x-4'}`}>
-                              <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep > 1 ? 'bg-green-500 border-green-500 text-black' : (offerStep === 1 ? 'bg-slate-900 border-blue-500 text-blue-500' : 'bg-slate-900 border-slate-700 text-slate-500')} font-bold z-10`}>{offerStep > 1 ? <Icons.Check size={16}/> : '2'}</div>
+                              <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep > 1 ? 'bg-green-500 border-green-500 text-black' : (offerStep === 1 ? 'bg-slate-900 border-blue-500 text-blue-500' : 'bg-slate-900 border-slate-700 text-slate-500')} font-bold z-10`}>
+                                  {offerStep > 1 ? <Icons.Check size={16}/> : '2'}
+                              </div>
                               <div className="glass-panel rounded-xl overflow-hidden">
-                                  <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex justify-between cursor-pointer" onClick={()=>setOfferStep(1)}><h4 className="font-bold text-white">Sobre A: Administrativo</h4>{offerStep === 1 ? <Icons.ChevronDown/> : <Icons.ChevronRight/>}</div>
+                                  <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex justify-between cursor-pointer" onClick={()=>setOfferStep(1)}>
+                                      <h4 className="font-bold text-white">Sobre A: Administrativo</h4>
+                                      {offerStep === 1 ? <Icons.ChevronDown/> : <Icons.ChevronRight/>}
+                                  </div>
                                   {offerStep === 1 && (
                                       <div className="p-6 space-y-4">
                                           <p className="text-sm text-slate-300">Este es el sobre de la capacidad y solvencia. Debes preparar y adjuntar aquí los documentos finales.</p>
+                                          
+                                          {/* File Manager A */}
                                           <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                                              <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre A</span><label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1"><Icons.Plus size={12}/> Adjuntar Archivo<input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'A')} /></label></div>
+                                              <div className="flex justify-between items-center mb-2">
+                                                  <span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre A</span>
+                                                  <label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1">
+                                                      <Icons.Plus size={12}/> Adjuntar Archivo
+                                                      <input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'A')} />
+                                                  </label>
+                                              </div>
                                               {envelopeFiles.A.length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos (Ej: DEUC, Escrituras, Garantía).</p>}
-                                              <div className="space-y-1">{envelopeFiles.A.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('A', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
+                                              <div className="space-y-1">
+                                                  {envelopeFiles.A.map((f, idx) => (
+                                                      <div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded">
+                                                          <span className="text-xs text-slate-300">{f.name}</span>
+                                                          <div className="flex gap-2">
+                                                              <button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button>
+                                                              <button onClick={()=>deleteEnvelopeFile('A', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button>
+                                                          </div>
+                                                      </div>
+                                                  ))}
+                                              </div>
                                           </div>
-                                          <div className="flex justify-end gap-2"><button onClick={()=>setOfferStep(2)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Todo listo, ir al Sobre B &rarr;</button></div>
+                                          
+                                          <div className="flex justify-end gap-2">
+                                              <button onClick={()=>setOfferStep(2)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Todo listo, ir al Sobre B &rarr;</button>
+                                          </div>
                                       </div>
                                   )}
                               </div>
                           </div>
+
+                          {/* STEP 3 */}
                           <div className={`relative transition-all duration-500 ${offerStep >= 2 ? 'opacity-100 translate-x-0' : 'opacity-50 translate-x-4'}`}>
-                              <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep > 2 ? 'bg-green-500 border-green-500 text-black' : (offerStep === 2 ? 'bg-slate-900 border-blue-500 text-blue-500' : 'bg-slate-900 border-slate-700 text-slate-500')} font-bold z-10`}>{offerStep > 2 ? <Icons.Check size={16}/> : '3'}</div>
+                              <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep > 2 ? 'bg-green-500 border-green-500 text-black' : (offerStep === 2 ? 'bg-slate-900 border-blue-500 text-blue-500' : 'bg-slate-900 border-slate-700 text-slate-500')} font-bold z-10`}>
+                                  {offerStep > 2 ? <Icons.Check size={16}/> : '3'}
+                              </div>
                               <div className="glass-panel rounded-xl overflow-hidden">
-                                  <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex justify-between cursor-pointer" onClick={()=>setOfferStep(2)}><h4 className="font-bold text-white">Sobre B: Técnico</h4>{offerStep === 2 ? <Icons.ChevronDown/> : <Icons.ChevronRight/>}</div>
+                                  <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex justify-between cursor-pointer" onClick={()=>setOfferStep(2)}>
+                                      <h4 className="font-bold text-white">Sobre B: Técnico</h4>
+                                      {offerStep === 2 ? <Icons.ChevronDown/> : <Icons.ChevronRight/>}
+                                  </div>
                                   {offerStep === 2 && (
                                       <div className="p-6 space-y-4">
                                           <div className="bg-slate-800 p-4 rounded-lg">
-                                              <div className="flex justify-between items-center mb-2"><h5 className="font-bold text-white text-sm flex items-center gap-2"><Icons.BrainCircuit size={16}/> Ideas de Mejoras Técnicas</h5><button onClick={()=>getAdvice('technical')} className="text-xs bg-blue-600 px-3 py-1 rounded text-white font-bold hover:bg-blue-500">{loadingAdvice ? <Icons.Loader/> : 'Sugerir Mejoras'}</button></div>
-                                              <div className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">{aiAdvice.technical || "Pulsa para que la IA analice el pliego técnico y sugiera mejoras."}</div>
+                                              <div className="flex justify-between items-center mb-2">
+                                                 <h5 className="font-bold text-white text-sm flex items-center gap-2"><Icons.BrainCircuit size={16}/> Ideas de Mejoras Técnicas</h5>
+                                                 <button onClick={()=>getAdvice('technical')} className="text-xs bg-blue-600 px-3 py-1 rounded text-white font-bold hover:bg-blue-500">{loadingAdvice ? <Icons.Loader/> : 'Sugerir Mejoras'}</button>
+                                              </div>
+                                              <div className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">
+                                                  {aiAdvice.technical || "Pulsa para que la IA analice el pliego técnico y sugiera 3 mejoras de alto valor para incluir en tu memoria."}
+                                              </div>
                                           </div>
+                                          
+                                          {/* File Manager B */}
                                           <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                                              <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre B</span><label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1"><Icons.Plus size={12}/> Adjuntar Archivo<input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'B')} /></label></div>
-                                              {envelopeFiles.B.length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos (Ej: Memoria Técnica).</p>}
-                                              <div className="space-y-1">{envelopeFiles.B.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('B', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
+                                              <div className="flex justify-between items-center mb-2">
+                                                  <span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre B</span>
+                                                  <label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1">
+                                                      <Icons.Plus size={12}/> Adjuntar Archivo
+                                                      <input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'B')} />
+                                                  </label>
+                                              </div>
+                                              {envelopeFiles.B.length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos (Ej: Memoria Técnica, Plan de Trabajo).</p>}
+                                              <div className="space-y-1">
+                                                  {envelopeFiles.B.map((f, idx) => (
+                                                      <div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded">
+                                                          <span className="text-xs text-slate-300">{f.name}</span>
+                                                          <div className="flex gap-2">
+                                                              <button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button>
+                                                              <button onClick={()=>deleteEnvelopeFile('B', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button>
+                                                          </div>
+                                                      </div>
+                                                  ))}
+                                              </div>
                                           </div>
-                                          <div className="flex justify-end gap-2"><button onClick={()=>setOfferStep(3)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Documentación Técnica lista &rarr;</button></div>
+
+                                          <div className="flex justify-end gap-2">
+                                              <button onClick={()=>setOfferStep(3)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Documentación Técnica lista &rarr;</button>
+                                          </div>
                                       </div>
                                   )}
                               </div>
                           </div>
+
+                          {/* STEP 4 */}
                           <div className={`relative transition-all duration-500 ${offerStep >= 3 ? 'opacity-100 translate-x-0' : 'opacity-50 translate-x-4'}`}>
-                              <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep > 3 ? 'bg-green-500 border-green-500 text-black' : (offerStep === 3 ? 'bg-slate-900 border-blue-500 text-blue-500' : 'bg-slate-900 border-slate-700 text-slate-500')} font-bold z-10`}>{offerStep > 3 ? <Icons.Check size={16}/> : '4'}</div>
+                              <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep > 3 ? 'bg-green-500 border-green-500 text-black' : (offerStep === 3 ? 'bg-slate-900 border-blue-500 text-blue-500' : 'bg-slate-900 border-slate-700 text-slate-500')} font-bold z-10`}>
+                                  {offerStep > 3 ? <Icons.Check size={16}/> : '4'}
+                              </div>
                               <div className="glass-panel rounded-xl overflow-hidden">
-                                  <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex justify-between cursor-pointer" onClick={()=>setOfferStep(3)}><h4 className="font-bold text-white">Sobre C: Oferta Económica</h4>{offerStep === 3 ? <Icons.ChevronDown/> : <Icons.ChevronRight/>}</div>
+                                  <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex justify-between cursor-pointer" onClick={()=>setOfferStep(3)}>
+                                      <h4 className="font-bold text-white">Sobre C: Oferta Económica</h4>
+                                      {offerStep === 3 ? <Icons.ChevronDown/> : <Icons.ChevronRight/>}
+                                  </div>
                                   {offerStep === 3 && (
                                       <div className="p-6 space-y-4">
-                                          <div className="grid grid-cols-2 gap-4 bg-slate-900 p-4 rounded-xl border border-slate-700"><div><span className="text-xs text-slate-500 block">Tu Oferta (Sin IVA)</span><span className="text-green-400 font-mono font-bold text-lg">{formatCurrency(precioOfertado)}</span></div><div><span className="text-xs text-slate-500 block">Baja</span><span className="text-white font-bold">{baja.toFixed(2)}%</span></div></div>
-                                          <div className="mt-4"><h5 className="font-bold text-white text-sm mb-2 flex items-center gap-2"><Icons.FileText size={16}/> Carta de Proposición</h5><div className="relative group"><div className="absolute top-2 right-2 z-10 flex gap-2"><button onClick={window.print} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-white" title="Imprimir"><Icons.Printer size={16}/></button><CopyBtn text={generateLetterText()}/></div><div className="bg-slate-900 p-4 rounded text-xs text-slate-300 font-mono h-64 overflow-y-auto whitespace-pre-wrap select-all border border-slate-700">{generateLetterText()}</div></div></div>
-                                          <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                                              <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre C</span><label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1"><Icons.Plus size={12}/> Adjuntar Archivo<input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'C')} /></label></div>
-                                              {envelopeFiles.C.length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos.</p>}
-                                              <div className="space-y-1">{envelopeFiles.C.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('C', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
+                                          <div className="grid grid-cols-2 gap-4 bg-slate-900 p-4 rounded-xl border border-slate-700">
+                                              <div>
+                                                  <span className="text-xs text-slate-500 block">Tu Oferta (Sin IVA)</span>
+                                                  <span className="text-green-400 font-mono font-bold text-lg">{formatCurrency(precioOfertado)}</span>
+                                              </div>
+                                              <div>
+                                                  <span className="text-xs text-slate-500 block">Baja</span>
+                                                  <span className="text-white font-bold">{baja.toFixed(2)}%</span>
+                                              </div>
                                           </div>
-                                          <div className="flex justify-end gap-2"><button onClick={()=>setOfferStep(4)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Oferta Generada. Finalizar &rarr;</button></div>
+
+                                          <div className="mt-4">
+                                              <h5 className="font-bold text-white text-sm mb-2 flex items-center gap-2"><Icons.FileText size={16}/> Carta de Proposición</h5>
+                                              <div className="relative group">
+                                                  <div className="absolute top-2 right-2 z-10 flex gap-2">
+                                                      <button onClick={window.print} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-white" title="Imprimir"><Icons.Printer size={16}/></button>
+                                                      <CopyBtn text={generateLetterText()}/>
+                                                  </div>
+                                                  <div className="bg-slate-900 p-4 rounded text-xs text-slate-300 font-mono h-64 overflow-y-auto whitespace-pre-wrap select-all border border-slate-700">
+                                                      {generateLetterText()}
+                                                  </div>
+                                              </div>
+                                          </div>
+                                          
+                                          {/* File Manager C */}
+                                          <div className="bg-slate-900 p-4 rounded border border-slate-700">
+                                              <div className="flex justify-between items-center mb-2">
+                                                  <span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre C</span>
+                                                  <label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1">
+                                                      <Icons.Plus size={12}/> Adjuntar Archivo
+                                                      <input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'C')} />
+                                                  </label>
+                                              </div>
+                                              {envelopeFiles.C.length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos (Ej: Oferta firmada).</p>}
+                                              <div className="space-y-1">
+                                                  {envelopeFiles.C.map((f, idx) => (
+                                                      <div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded">
+                                                          <span className="text-xs text-slate-300">{f.name}</span>
+                                                          <div className="flex gap-2">
+                                                              <button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button>
+                                                              <button onClick={()=>deleteEnvelopeFile('C', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button>
+                                                          </div>
+                                                      </div>
+                                                  ))}
+                                              </div>
+                                          </div>
+
+                                          <div className="flex justify-end gap-2">
+                                              <button onClick={()=>setOfferStep(4)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Oferta Generada. Finalizar &rarr;</button>
+                                          </div>
                                       </div>
                                   )}
                               </div>
                           </div>
+
+                          {/* STEP 5 */}
                           <div className={`relative transition-all duration-500 ${offerStep >= 4 ? 'opacity-100 translate-x-0' : 'opacity-50 translate-x-4'}`}>
-                              <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep === 4 ? 'bg-green-500 border-green-500 text-black' : 'bg-slate-900 border-slate-700 text-slate-500'} font-bold z-10`}><Icons.Upload size={16}/></div>
+                              <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep === 4 ? 'bg-green-500 border-green-500 text-black' : 'bg-slate-900 border-slate-700 text-slate-500'} font-bold z-10`}>
+                                  <Icons.Upload size={16}/>
+                              </div>
                               <div className="glass-panel rounded-xl overflow-hidden">
-                                  <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex justify-between cursor-pointer" onClick={()=>setOfferStep(4)}><h4 className="font-bold text-white">Presentación y Firma</h4>{offerStep === 4 ? <Icons.ChevronDown/> : <Icons.ChevronRight/>}</div>
+                                  <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex justify-between cursor-pointer" onClick={()=>setOfferStep(4)}>
+                                      <h4 className="font-bold text-white">Presentación y Firma</h4>
+                                      {offerStep === 4 ? <Icons.ChevronDown/> : <Icons.ChevronRight/>}
+                                  </div>
                                   {offerStep === 4 && (
                                       <div className="p-6 text-center space-y-4">
-                                          <div className="w-16 h-16 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center mx-auto mb-4"><Icons.CheckCircle size={32}/></div>
+                                          <div className="w-16 h-16 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center mx-auto mb-4">
+                                              <Icons.CheckCircle size={32}/>
+                                          </div>
                                           <h3 className="text-xl font-bold text-white">¡Estás listo para licitar!</h3>
-                                          <p className="text-slate-300 text-sm max-w-md mx-auto">Tienes todos los archivos organizados. Accede a la plataforma para presentar:</p>
+                                          <p className="text-slate-300 text-sm max-w-md mx-auto">
+                                              Tienes todos los archivos organizados. Accede a la plataforma para presentar:
+                                          </p>
+                                          
                                           <div className="bg-slate-800 p-4 rounded text-left border border-slate-600 max-w-md mx-auto">
                                               <div className="text-blue-400 font-bold mb-1 flex items-center gap-2"><Icons.ExternalLink size={16}/> {detectedPlatform.name}</div>
                                               <p className="text-xs text-slate-400 mb-3">{detectedPlatform.note}</p>
                                               <a href={detectedPlatform.url} target="_blank" className="btn-primary px-4 py-2 rounded w-full block text-center text-sm font-bold">Ir a la Plataforma</a>
                                           </div>
-                                          <button onClick={window.print} className="bg-slate-700 hover:bg-slate-600 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 mx-auto"><Icons.Printer/> Imprimir Resumen Oferta</button>
+
+                                          <button onClick={window.print} className="bg-slate-700 hover:bg-slate-600 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 mx-auto">
+                                              <Icons.Printer/> Imprimir Resumen Oferta
+                                          </button>
                                       </div>
                                   )}
                               </div>
                           </div>
+
                       </div>
+                      
                       <div className="print-only hidden p-8 bg-white text-black">
-                         <h1 className="text-2xl font-bold mb-4">Resumen Técnico: {localTender.title}</h1>
-                         <div className="whitespace-pre-wrap font-mono text-sm border-b pb-4 mb-4">{generateReportText(localTender.analysis)}</div>
-                         {aiAdvice.economic && (<div className="mb-4"><h2 className="text-lg font-bold">Estrategia Económica</h2><p className="text-sm whitespace-pre-wrap">{aiAdvice.economic}</p></div>)}
-                         <div className="mb-4"><strong>Oferta Final:</strong> {formatCurrency(precioOfertado)} (Baja: {baja.toFixed(2)}%)</div>
-                         <h3 className="font-bold mt-4">Documentación Adjunta (Checklist)</h3>
-                         <div className="grid grid-cols-3 gap-4 mt-2">
-                             <div><strong>Sobre A</strong><ul>{envelopeFiles.A.map(f=><li key={f.id}>[ ] {f.name}</li>)}</ul></div>
-                             <div><strong>Sobre B</strong><ul>{envelopeFiles.B.map(f=><li key={f.id}>[ ] {f.name}</li>)}</ul></div>
-                             <div><strong>Sobre C</strong><ul>{envelopeFiles.C.map(f=><li key={f.id}>[ ] {f.name}</li>)}</ul></div>
+                         <h1 className="text-2xl font-bold mb-4">Resumen de Oferta: {localTender.title}</h1>
+                         <div className="mb-4">
+                             <strong>Empresa:</strong> {selectedCompanyId ? companies.find(c=>c.id==selectedCompanyId).name : 'No seleccionada'}<br/>
+                             <strong>Fecha:</strong> {new Date().toLocaleDateString()}<br/>
+                             <strong>Oferta:</strong> {formatCurrency(precioOfertado)} (Baja: {baja.toFixed(2)}%)
                          </div>
+                         <h2 className="text-xl font-bold mt-6 mb-2">Checklist Documentación</h2>
+                         <div className="grid grid-cols-3 gap-4 mt-2">
+                             <div>
+                                 <h3 className="font-bold">Sobre A</h3>
+                                 <ul>{envelopeFiles.A.map(f => <li key={f.id}>[ ] {f.name}</li>)}</ul>
+                             </div>
+                             <div>
+                                 <h3 className="font-bold">Sobre B</h3>
+                                 <ul>{envelopeFiles.B.map(f => <li key={f.id}>[ ] {f.name}</li>)}</ul>
+                             </div>
+                             <div>
+                                 <h3 className="font-bold">Sobre C</h3>
+                                 <ul>{envelopeFiles.C.map(f => <li key={f.id}>[ ] {f.name}</li>)}</ul>
+                             </div>
+                         </div>
+                         <div className="mt-8 border-t pt-4 text-xs">Generado por BoardingGate LicitacionesPro</div>
                       </div>
                   </div>
               );
@@ -823,13 +1239,18 @@
                       <div className="flex bg-slate-800 p-1 rounded-lg">
                            {[1,2,3,4].map(t => (
                                <button key={t} onClick={()=>setActiveTab(t)} className={`px-4 py-2 rounded text-xs font-bold transition-all ${activeTab===t ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>
-                                   {t===1 && "1. Documentos"} {t===2 && "2. Análisis"} {t===3 && "3. Económica"} {t===4 && "4. Oferta"}
+                                   {t===1 && "1. Documentos"}
+                                   {t===2 && "2. Análisis"}
+                                   {t===3 && "3. Económica"}
+                                   {t===4 && "4. Oferta"}
                                </button>
                            ))}
                       </div>
                   </header>
+
                   <main className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                       <div className="max-w-5xl mx-auto">
+                          
                           {activeTab === 1 && (
                               <div className="space-y-6 fade-in no-print">
                                   <div className="glass-panel p-8 rounded-2xl text-center border-dashed border-2 border-slate-700 hover:border-blue-500 transition-colors">
@@ -841,60 +1262,203 @@
                                           <input type="file" multiple accept="application/pdf" className="hidden" onChange={handlePdfUpload} disabled={pdfProcessing}/>
                                       </label>
                                   </div>
+                                  
                                   {localTender.files.length > 0 && (
                                       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
                                           <div className="p-4 bg-slate-800/50 font-bold text-slate-300 text-sm">Archivos del Expediente</div>
                                           {localTender.files.map((f, i) => (
                                               <div key={i} className="p-4 border-b border-slate-800 flex justify-between items-center last:border-0">
-                                                  <div className="flex items-center gap-3"><div className="bg-red-900/20 text-red-400 p-2 rounded"><Icons.FileText size={18}/></div><span className="text-sm text-slate-200">{f.name}</span></div>
-                                                  <div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-slate-500 hover:text-blue-400 p-2"><Icons.Download size={18}/></button><button onClick={()=>handleDeleteFile(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={18}/></button></div>
+                                                  <div className="flex items-center gap-3">
+                                                      <div className="bg-red-900/20 text-red-400 p-2 rounded"><Icons.FileText size={18}/></div>
+                                                      <span className="text-sm text-slate-200">{f.name}</span>
+                                                  </div>
+                                                  <div className="flex gap-2">
+                                                      <button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-slate-500 hover:text-blue-400 p-2"><Icons.Download size={18}/></button>
+                                                      <button onClick={()=>handleDeleteFile(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={18}/></button>
+                                                  </div>
                                               </div>
                                           ))}
-                                          <div className="p-4 bg-slate-800/30 flex justify-end"><button onClick={runAnalysis} disabled={isAnalyzing} className="btn-primary px-6 py-2 rounded-lg flex items-center gap-2 text-sm shadow-lg shadow-blue-900/30">{isAnalyzing ? <Icons.Loader/> : <Icons.BrainCircuit/>} {isAnalyzing ? 'Analizando Pliego...' : 'EJECUTAR ANÁLISIS IA'}</button></div>
+                                          <div className="p-4 bg-slate-800/30 flex justify-end">
+                                              <button onClick={runAnalysis} disabled={isAnalyzing} className="btn-primary px-6 py-2 rounded-lg flex items-center gap-2 text-sm shadow-lg shadow-blue-900/30">
+                                                  {isAnalyzing ? <Icons.Loader/> : <Icons.BrainCircuit/>} {isAnalyzing ? 'Analizando Pliego...' : 'EJECUTAR ANÁLISIS IA'}
+                                              </button>
+                                          </div>
                                       </div>
                                   )}
                               </div>
                           )}
+
                           {activeTab === 2 && (
                               <div className="fade-in space-y-6 no-print">
                                   {!localTender.analysis ? (
-                                      <div className="text-center py-20 text-slate-500"><Icons.BrainCircuit size={48} className="mx-auto mb-4 opacity-50"/><p>No hay análisis aún. Ve a la pestaña "Documentos" y ejecútalo.</p></div>
+                                      <div className="text-center py-20 text-slate-500">
+                                          <Icons.BrainCircuit size={48} className="mx-auto mb-4 opacity-50"/>
+                                          <p>No hay análisis aún. Ve a la pestaña "Documentos" y ejecútalo.</p>
+                                      </div>
                                   ) : (
                                       <>
                                           <div className="flex justify-end mb-4 gap-2">
-                                               <button onClick={window.print} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-600"><Icons.Printer size={16}/> Imprimir</button>
-                                               <button onClick={()=>setReportVisible(!reportVisible)} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-600"><Icons.FileText size={16}/> {reportVisible ? 'Ocultar Informe' : 'Ver Informe de Texto'}</button>
+                                               <button onClick={window.print} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-600">
+                                                   <Icons.Printer size={16}/> Imprimir
+                                               </button>
+                                               <button onClick={()=>setReportVisible(!reportVisible)} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-600">
+                                                   <Icons.FileText size={16}/> {reportVisible ? 'Ocultar Informe' : 'Ver Informe de Texto'}
+                                               </button>
                                           </div>
-                                          {reportVisible && (<div className="glass-panel p-6 rounded-xl mb-6 border border-blue-500/30 relative group"><div className="absolute top-4 right-4"><CopyBtn text={generateReportText(localTender.analysis)}/></div><h4 className="text-blue-400 text-sm font-bold uppercase mb-4 tracking-wider">Informe Completo</h4><div className="bg-slate-900 p-6 rounded text-xs text-slate-300 font-mono whitespace-pre-wrap select-all max-h-96 overflow-y-auto leading-relaxed border border-slate-700">{generateReportText(localTender.analysis)}</div></div>)}
-                                          <div className="glass-panel p-6 rounded-xl relative"><div className="absolute top-4 right-4"><CopyBtn text={JSON.stringify(localTender.analysis.resumen_ejecutivo, null, 2)}/></div><h4 className="text-blue-400 text-sm font-bold uppercase mb-4 tracking-wider flex items-center gap-2"><Icons.Building size={16}/> Resumen Ejecutivo</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm"><div><div className="text-xs text-slate-500">Organismo</div><div className="text-white font-bold">{localTender.analysis.resumen_ejecutivo?.organismo}</div></div><div><div className="text-xs text-slate-500">Expediente</div><div className="text-white">{localTender.analysis.resumen_ejecutivo?.numero_expediente}</div></div><div className="col-span-full"><div className="text-xs text-slate-500">Objeto Detallado</div><div className="text-white italic">{localTender.analysis.resumen_ejecutivo?.objeto_detallado}</div></div><div><div className="text-xs text-slate-500">Localización</div><div className="text-white">{localTender.analysis.resumen_ejecutivo?.localizacion}</div></div><div><div className="text-xs text-slate-500">CPV</div><div className="text-white font-mono">{localTender.analysis.resumen_ejecutivo?.cpv}</div></div></div></div>
+                                          
+                                          {reportVisible && (
+                                              <div className="glass-panel p-6 rounded-xl mb-6 border border-blue-500/30 relative group">
+                                                  <div className="absolute top-4 right-4"><CopyBtn text={generateReportText(localTender.analysis)}/></div>
+                                                  <h4 className="text-blue-400 text-sm font-bold uppercase mb-4 tracking-wider">Informe Completo</h4>
+                                                  <div className="bg-slate-900 p-6 rounded text-xs text-slate-300 font-mono whitespace-pre-wrap select-all max-h-96 overflow-y-auto leading-relaxed border border-slate-700">
+                                                      {generateReportText(localTender.analysis)}
+                                                  </div>
+                                              </div>
+                                          )}
+
+                                          <div className="glass-panel p-6 rounded-xl relative">
+                                              <div className="absolute top-4 right-4"><CopyBtn text={JSON.stringify(localTender.analysis.resumen_ejecutivo, null, 2)}/></div>
+                                              <h4 className="text-blue-400 text-sm font-bold uppercase mb-4 tracking-wider flex items-center gap-2"><Icons.Building size={16}/> Resumen Ejecutivo</h4>
+                                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                                  <div><div className="text-xs text-slate-500">Organismo</div><div className="text-white font-bold">{localTender.analysis.resumen_ejecutivo?.organismo}</div></div>
+                                                  <div><div className="text-xs text-slate-500">Expediente</div><div className="text-white">{localTender.analysis.resumen_ejecutivo?.numero_expediente}</div></div>
+                                                  <div className="col-span-full"><div className="text-xs text-slate-500">Objeto Detallado</div><div className="text-white italic">{localTender.analysis.resumen_ejecutivo?.objeto_detallado}</div></div>
+                                                  <div><div className="text-xs text-slate-500">Localización</div><div className="text-white">{localTender.analysis.resumen_ejecutivo?.localizacion}</div></div>
+                                                  <div><div className="text-xs text-slate-500">CPV</div><div className="text-white font-mono">{localTender.analysis.resumen_ejecutivo?.cpv}</div></div>
+                                              </div>
+                                          </div>
+
                                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                              <div className="glass-panel p-6 rounded-xl relative"><div className="absolute top-4 right-4"><CopyBtn text={JSON.stringify(localTender.analysis.datos_economicos, null, 2)}/></div><h4 className="text-green-400 text-sm font-bold uppercase mb-4 tracking-wider flex items-center gap-2"><Icons.Calculator size={16}/> Económico y Plazos</h4><div className="space-y-4"><div className="flex justify-between items-center border-b border-slate-700 pb-2"><span className="text-sm text-slate-400">PBL (Sin IVA)</span><span className="text-green-400 font-bold font-mono text-lg">{formatCurrency(localTender.analysis.datos_economicos?.pbl_sin_iva)}</span></div><div className="flex justify-between items-center"><span className="text-sm text-slate-400">Plazo Ejecución</span><span className="text-white font-bold">{localTender.analysis.plazos_fechas?.plazo_ejecucion}</span></div><div className="bg-slate-900/50 p-3 rounded border border-slate-700 mt-2"><div className="text-[10px] text-blue-300 font-bold flex items-center gap-1 mb-1"><Icons.Clock size={10}/> FECHA LÍMITE PRESENTACIÓN</div><div className="text-white font-bold">{localTender.analysis.plazos_fechas?.fecha_limite_presentacion || 'Consultar Plataforma'}</div></div></div></div>
-                                              <div className="glass-panel p-6 rounded-xl relative"><div className="absolute top-4 right-4"><CopyBtn text={JSON.stringify(localTender.analysis.requisitos_admision, null, 2)}/></div><h4 className="text-amber-400 text-sm font-bold uppercase mb-4 tracking-wider flex items-center gap-2"><Icons.AlertTriangle size={16}/> Admisión y Solvencia</h4><div className="space-y-3 text-sm"><div><div className="text-xs text-slate-500">Clasificación</div><div className="text-yellow-200 font-mono font-bold bg-yellow-900/20 px-2 py-1 rounded inline-block">{localTender.analysis.requisitos_admision?.clasificacion_exigida || 'No exigida'}</div></div><div><div className="text-xs text-slate-500">Solvencia Técnica</div><div className="text-slate-300 text-xs">{localTender.analysis.requisitos_admision?.solvencia_tecnica || 'Según pliegos'}</div></div></div></div>
+                                              <div className="glass-panel p-6 rounded-xl relative">
+                                                  <div className="absolute top-4 right-4"><CopyBtn text={JSON.stringify(localTender.analysis.datos_economicos, null, 2)}/></div>
+                                                  <h4 className="text-green-400 text-sm font-bold uppercase mb-4 tracking-wider flex items-center gap-2"><Icons.Calculator size={16}/> Económico y Plazos</h4>
+                                                  <div className="space-y-4">
+                                                      <div className="flex justify-between items-center border-b border-slate-700 pb-2">
+                                                          <span className="text-sm text-slate-400">PBL (Sin IVA)</span>
+                                                          <span className="text-green-400 font-bold font-mono text-lg">{formatCurrency(localTender.analysis.datos_economicos?.pbl_sin_iva)}</span>
+                                                      </div>
+                                                      <div className="flex justify-between items-center">
+                                                          <span className="text-sm text-slate-400">Plazo Ejecución</span>
+                                                          <span className="text-white font-bold">{localTender.analysis.plazos_fechas?.plazo_ejecucion}</span>
+                                                      </div>
+                                                      <div className="bg-slate-900/50 p-3 rounded border border-slate-700 mt-2">
+                                                          <div className="text-[10px] text-blue-300 font-bold flex items-center gap-1 mb-1"><Icons.Clock size={10}/> FECHA LÍMITE PRESENTACIÓN</div>
+                                                          <div className="text-white font-bold">{localTender.analysis.plazos_fechas?.fecha_limite_presentacion || 'Consultar Plataforma'}</div>
+                                                      </div>
+                                                  </div>
+                                              </div>
+
+                                              <div className="glass-panel p-6 rounded-xl relative">
+                                                  <div className="absolute top-4 right-4"><CopyBtn text={JSON.stringify(localTender.analysis.requisitos_admision, null, 2)}/></div>
+                                                  <h4 className="text-amber-400 text-sm font-bold uppercase mb-4 tracking-wider flex items-center gap-2"><Icons.AlertTriangle size={16}/> Admisión y Solvencia</h4>
+                                                  <div className="space-y-3 text-sm">
+                                                      <div>
+                                                          <div className="text-xs text-slate-500">Clasificación</div>
+                                                          <div className="text-yellow-200 font-mono font-bold bg-yellow-900/20 px-2 py-1 rounded inline-block">{localTender.analysis.requisitos_admision?.clasificacion_exigida || 'No exigida'}</div>
+                                                      </div>
+                                                      <div>
+                                                          <div className="text-xs text-slate-500">Solvencia Técnica</div>
+                                                          <div className="text-slate-300 text-xs">{localTender.analysis.requisitos_admision?.solvencia_tecnica || 'Según pliegos'}</div>
+                                                      </div>
+                                                  </div>
+                                              </div>
                                           </div>
                                       </>
                                   )}
                               </div>
                           )}
+
                           {activeTab === 3 && (
                               <div className="fade-in max-w-3xl mx-auto no-print">
                                   <div className="glass-panel p-8 rounded-2xl shadow-2xl">
                                       <div className="flex items-center justify-between gap-3 mb-8 pb-4 border-b border-slate-700">
-                                          <div className="flex items-center gap-3"><div className="p-3 bg-green-500/20 text-green-400 rounded-xl"><Icons.Calculator size={32}/></div><div><h3 className="text-2xl font-bold text-white">Calculadora de Oferta</h3><p className="text-sm text-slate-400">Estudio de costes y baja</p></div></div>
+                                          <div className="flex items-center gap-3">
+                                            <div className="p-3 bg-green-500/20 text-green-400 rounded-xl"><Icons.Calculator size={32}/></div>
+                                            <div><h3 className="text-2xl font-bold text-white">Calculadora de Oferta</h3><p className="text-sm text-slate-400">Estudio de costes y baja</p></div>
+                                          </div>
                                           <button onClick={()=>getAdvice('economic')} className="text-xs bg-blue-600 px-3 py-1 rounded text-white font-bold hover:bg-blue-500 flex items-center gap-2">{loadingAdvice ? <Icons.Loader/> : <Icons.BrainCircuit/>} Consultar Estrategia a la IA</button>
                                       </div>
-                                      {aiAdvice.economic && (<div className="mb-6 bg-slate-800 p-4 rounded-lg border-l-4 border-blue-500 fade-in"><h5 className="font-bold text-blue-300 text-sm mb-2">Análisis de Mercado (IA)</h5><div className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">{aiAdvice.economic}</div></div>)}
-                                      <div className="grid grid-cols-2 gap-8 mb-8"><div><label className="text-xs text-slate-400 font-bold block mb-2">Costes Directos + Indirectos (€)</label><input type="number" className="input-std text-right font-mono text-lg" value={costes} onChange={e=>setCostes(parseFloat(e.target.value)||0)} /></div><div><label className="text-xs text-slate-400 font-bold block mb-2">Margen Industrial Deseado (%)</label><input type="number" className="input-std text-right font-mono text-lg text-yellow-400 border-yellow-500/30" value={margen} onChange={e=>setMargen(parseFloat(e.target.value)||0)} /></div></div>
-                                      <div className="bg-slate-900 rounded-xl p-6 border border-slate-700 space-y-6"><div className="flex justify-between items-center"><span className="text-slate-400 text-sm">Presupuesto Base (PBL)</span><span className="text-white font-mono font-bold">{formatCurrency(pbl)}</span></div><div className="flex justify-between items-center"><span className="text-blue-400 text-sm font-bold">Precio de Venta Objetivo</span><span className="text-blue-300 font-mono font-bold text-xl">{formatCurrency(costes * (1 + margen/100))}</span></div><div className="h-px bg-slate-700 my-2"></div><div><label className="flex justify-between text-sm mb-2"><span className="text-white font-bold">Baja a Ofertar (%)</span> <span className="text-green-400 font-mono font-bold text-xl">{baja.toFixed(2)}%</span></label><input type="range" min="0" max="60" step="0.01" className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500" value={baja} onChange={e=>setBaja(parseFloat(e.target.value))} /></div><div className="grid grid-cols-2 gap-4 pt-4"><div className="bg-black/30 p-3 rounded border border-slate-600"><div className="text-[10px] text-slate-500 uppercase">Importe Oferta (Sin IVA)</div><div className="text-white font-mono font-bold text-lg">{formatCurrency(precioOfertado)}</div></div><div className="bg-black/30 p-3 rounded border border-slate-600"><div className="text-[10px] text-slate-500 uppercase">Resultado Neto</div><div className={`font-mono font-bold text-lg ${beneficio >= 0 ? 'text-green-400' : 'text-red-500'}`}>{formatCurrency(beneficio)}</div></div></div></div>
+
+                                      {aiAdvice.economic && (
+                                          <div className="mb-6 bg-slate-800 p-4 rounded-lg border-l-4 border-blue-500 fade-in">
+                                              <h5 className="font-bold text-blue-300 text-sm mb-2">Análisis de Mercado (IA)</h5>
+                                              <div className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">{aiAdvice.economic}</div>
+                                          </div>
+                                      )}
+
+                                      <div className="grid grid-cols-2 gap-8 mb-8">
+                                          <div>
+                                              <label className="text-xs text-slate-400 font-bold block mb-2">Costes Directos + Indirectos (€)</label>
+                                              <input type="number" className="input-std text-right font-mono text-lg" value={costes} onChange={e=>setCostes(parseFloat(e.target.value)||0)} />
+                                          </div>
+                                          <div>
+                                              <label className="text-xs text-slate-400 font-bold block mb-2">Margen Industrial Deseado (%)</label>
+                                              <input type="number" className="input-std text-right font-mono text-lg text-yellow-400 border-yellow-500/30" value={margen} onChange={e=>setMargen(parseFloat(e.target.value)||0)} />
+                                          </div>
+                                      </div>
+
+                                      <div className="bg-slate-900 rounded-xl p-6 border border-slate-700 space-y-6">
+                                          <div className="flex justify-between items-center">
+                                              <span className="text-slate-400 text-sm">Presupuesto Base (PBL)</span>
+                                              <span className="text-white font-mono font-bold">{formatCurrency(pbl)}</span>
+                                          </div>
+                                          <div className="flex justify-between items-center">
+                                              <span className="text-blue-400 text-sm font-bold">Precio de Venta Objetivo</span>
+                                              <span className="text-blue-300 font-mono font-bold text-xl">{formatCurrency(costes * (1 + margen/100))}</span>
+                                          </div>
+                                          
+                                          <div className="h-px bg-slate-700 my-2"></div>
+                                          
+                                          <div>
+                                              <label className="flex justify-between text-sm mb-2"><span className="text-white font-bold">Baja a Ofertar (%)</span> <span className="text-green-400 font-mono font-bold text-xl">{baja.toFixed(2)}%</span></label>
+                                              <input type="range" min="0" max="60" step="0.01" className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500" value={baja} onChange={e=>setBaja(parseFloat(e.target.value))} />
+                                          </div>
+
+                                          <div className="grid grid-cols-2 gap-4 pt-4">
+                                              <div className="bg-black/30 p-3 rounded border border-slate-600">
+                                                  <div className="text-[10px] text-slate-500 uppercase">Importe Oferta (Sin IVA)</div>
+                                                  <div className="text-white font-mono font-bold text-lg">{formatCurrency(precioOfertado)}</div>
+                                              </div>
+                                              <div className="bg-black/30 p-3 rounded border border-slate-600">
+                                                  <div className="text-[10px] text-slate-500 uppercase">Resultado Neto</div>
+                                                  <div className={`font-mono font-bold text-lg ${beneficio >= 0 ? 'text-green-400' : 'text-red-500'}`}>{formatCurrency(beneficio)}</div>
+                                              </div>
+                                          </div>
+                                      </div>
                                   </div>
                               </div>
                           )}
+
                           {activeTab === 4 && renderBidAssistant()}
                       </div>
+                      
                       <div className="print-only hidden p-8 bg-white text-black">
                          <h1 className="text-2xl font-bold mb-4">Resumen Técnico: {localTender.title}</h1>
                          <div className="whitespace-pre-wrap font-mono text-sm border-b pb-4 mb-4">{generateReportText(localTender.analysis)}</div>
-                         {aiAdvice.economic && (<div className="mb-4"><h2 className="text-lg font-bold">Estrategia Económica</h2><p className="text-sm whitespace-pre-wrap">{aiAdvice.economic}</p></div>)}
-                         <div className="mb-4"><strong>Oferta Final:</strong> {formatCurrency(precioOfertado)} (Baja: {baja.toFixed(2)}%)</div>
+                         {aiAdvice.economic && (
+                             <div className="mb-4">
+                                 <h2 className="text-lg font-bold">Estrategia Económica</h2>
+                                 <p className="text-sm whitespace-pre-wrap">{aiAdvice.economic}</p>
+                             </div>
+                         )}
+                         <div className="mb-4">
+                             <strong>Oferta Final:</strong> {formatCurrency(precioOfertado)} (Baja: {baja.toFixed(2)}%)
+                         </div>
+                         <h3 className="font-bold mt-4">Documentación Adjunta (Checklist)</h3>
+                         <div className="grid grid-cols-3 gap-4 mt-2">
+                             <div>
+                                 <h3 className="font-bold">Sobre A</h3>
+                                 <ul>{envelopeFiles.A.map(f => <li key={f.id}>[ ] {f.name}</li>)}</ul>
+                             </div>
+                             <div>
+                                 <h3 className="font-bold">Sobre B</h3>
+                                 <ul>{envelopeFiles.B.map(f => <li key={f.id}>[ ] {f.name}</li>)}</ul>
+                             </div>
+                             <div>
+                                 <h3 className="font-bold">Sobre C</h3>
+                                 <ul>{envelopeFiles.C.map(f => <li key={f.id}>[ ] {f.name}</li>)}</ul>
+                             </div>
+                         </div>
                       </div>
                   </main>
               </div>
