@@ -38,7 +38,6 @@
       .chat-user { background-color: #1d4ed8; color: white; border-top-right-radius: 0; margin-left: auto; }
       .chat-ai { background-color: #1e293b; color: #e2e8f0; border-top-left-radius: 0; border: 1px solid #334155; }
 
-      /* Estilos para Impresión */
       @media print {
         body { background: white; color: black; overflow: visible; height: auto; }
         #root { display: block; height: auto; overflow: visible; }
@@ -666,14 +665,13 @@
                           let changed = false;
                           company.recurringDocs.forEach(doc => {
                               const env = doc.targetEnvelope || 'A';
-                              // Comprobar si ya existe para no duplicar (basado en fileId original)
                               const exists = newEnvelopes[env].some(f => f.refId === doc.fileId);
                               if (!exists) {
                                   newEnvelopes[env] = [...newEnvelopes[env], {
-                                      id: `ref_${doc.fileId}_${Date.now()}`, // ID único en el array del sobre
+                                      id: `ref_${doc.fileId}_${Date.now()}`, 
                                       name: doc.name,
-                                      refId: doc.fileId, // Referencia al archivo real en DB
-                                      isReference: true // Marca para saber que no hay que borrarlo de DB al quitarlo de la lista
+                                      refId: doc.fileId, 
+                                      isReference: true 
                                   }];
                                   changed = true;
                               }
@@ -728,7 +726,6 @@
 
           const deleteEnvelopeFile = async (envelopeType, idx) => {
              const fileItem = envelopeFiles[envelopeType][idx];
-             // Solo borramos de DB si NO es una referencia (es decir, si fue subido manualmente en el sobre)
              if (!fileItem.isReference) {
                  await dbActions.del(DB_STORES.FILES, fileItem.id);
              }
