@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -38,6 +37,7 @@
       .chat-user { background-color: #1d4ed8; color: white; border-top-right-radius: 0; margin-left: auto; }
       .chat-ai { background-color: #1e293b; color: #e2e8f0; border-top-left-radius: 0; border: 1px solid #334155; }
 
+      /* Estilos para Impresión */
       @media print {
         body { background: white; color: black; overflow: visible; height: auto; }
         #root { display: block; height: auto; overflow: visible; }
@@ -202,8 +202,16 @@
       const askAIChat = async (apiKey, tenderData, userQuestion) => {
           const savedModel = window.localStorage.getItem('gemini_model');
           const MODEL = savedModel ? JSON.parse(savedModel) : "gemini-1.5-flash";
+          
           const contextText = tenderData.rawText ? tenderData.rawText.substring(0, 50000) : "Sin documento base completo. Usa el análisis si es posible.";
-          const prompt = `Actúa como un experto en licitaciones revisando este pliego. CONTEXTO (Extracto del PCAP/PPT): "${contextText}". PREGUNTA DEL USUARIO: "${userQuestion}". INSTRUCCIÓN: Responde de forma precisa basándote SÓLO en el texto proporcionado. Si la respuesta no está en el documento, indícalo claramente. Sé breve y directo.`;
+          
+          const prompt = `Actúa como un experto en licitaciones revisando este pliego.
+          CONTEXTO (Extracto del PCAP/PPT): "${contextText}"
+          
+          PREGUNTA DEL USUARIO: "${userQuestion}"
+          
+          INSTRUCCIÓN: Responde de forma precisa basándote SÓLO en el texto proporcionado. Si la respuesta no está en el documento, indícalo claramente. Sé breve y directo.`;
+
           try {
               const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`, {
                   method: 'POST',
@@ -221,7 +229,10 @@
            const MODEL = savedModel ? JSON.parse(savedModel) : "gemini-1.5-flash";
            const contextText = tenderData.rawText ? tenderData.rawText.substring(0, 15000) : "";
            if(!contextText) return [];
-           const prompt = `Analiza este pliego de licitación y genera 4 preguntas CRÍTICAS que un licitador debería hacerse para no cometer errores (ej: sobre solvencia, plazos, visitas obligatorias, subrogación personal). Devuelve SOLO las preguntas separadas por saltos de línea. Sin numeración. TEXTO: "${contextText}"`;
+
+           const prompt = `Analiza este pliego de licitación y genera 4 preguntas CRÍTICAS que un licitador debería hacerse para no cometer errores (ej: sobre solvencia, plazos, visitas obligatorias, subrogación personal). Devuelve SOLO las preguntas separadas por saltos de línea. Sin numeración.
+           TEXTO: "${contextText}"`;
+
            try {
               const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`, {
                   method: 'POST',
@@ -443,6 +454,7 @@
           const [form, setForm] = useState(null);
           const [processing, setProcessing] = useState(false);
           const [logoPreview, setLogoPreview] = useState(null);
+          const [targetEnv, setTargetEnv] = useState('A'); // Selector de Sobre por defecto
 
           const defaultCompany = { id: null, name: '', cif: '', address: '', repName: '', repDni: '', notary: '', registryData: '', classification: '', recurringDocs: [], logoId: null };
 
@@ -477,15 +489,11 @@
               setProcessing(true);
               const fileId = `doc_${Date.now()}`;
               await dbActions.put(DB_STORES.FILES, fileId, file); 
-              // Por defecto asignamos al Sobre A si no se especifica
-              setForm(prev => ({ ...prev, recurringDocs: [...prev.recurringDocs, { name: file.name, fileId, fileName: file.name, targetEnvelope: 'A' }] }));
+              setForm(prev => ({ 
+                  ...prev, 
+                  recurringDocs: [...prev.recurringDocs, { name: file.name, fileId, fileName: file.name, targetEnvelope: targetEnv }] 
+              }));
               setProcessing(false);
-          };
-
-          const updateDocEnvelope = (idx, env) => {
-              const newDocs = [...form.recurringDocs];
-              newDocs[idx].targetEnvelope = env;
-              setForm({...form, recurringDocs: newDocs});
           };
 
           const handleLogoUpload = async (e) => {
@@ -543,10 +551,17 @@
                       <div className="glass-panel p-6 rounded-xl mb-8 border-dashed border-slate-600">
                           <div className="flex justify-between items-center mb-4">
                               <h3 className="text-sm font-bold text-white flex items-center gap-2"><Icons.FileText/> Documentación Recurrente</h3>
-                              <label className="btn-primary px-3 py-1.5 rounded text-xs cursor-pointer flex items-center gap-2">
-                                  {processing ? <Icons.Loader size={14}/> : <Icons.Upload size={14}/>} Añadir PDF
-                                  <input type="file" accept="application/pdf" className="hidden" onChange={handleUploadDoc} disabled={processing}/>
-                              </label>
+                              <div className="flex gap-2">
+                                  <select className="bg-slate-800 border border-slate-600 text-xs text-white rounded px-2 py-1 outline-none" value={targetEnv} onChange={e=>setTargetEnv(e.target.value)}>
+                                      <option value="A">Sobre A</option>
+                                      <option value="B">Sobre B</option>
+                                      <option value="C">Sobre C</option>
+                                  </select>
+                                  <label className="btn-primary px-3 py-1.5 rounded text-xs cursor-pointer flex items-center gap-2">
+                                      {processing ? <Icons.Loader size={14}/> : <Icons.Upload size={14}/>} Añadir PDF
+                                      <input type="file" accept="application/pdf" className="hidden" onChange={handleUploadDoc} disabled={processing}/>
+                                  </label>
+                              </div>
                           </div>
                           <div className="space-y-2">
                               {form.recurringDocs.map((doc, i) => (
@@ -555,17 +570,10 @@
                                           <div className="bg-red-500/20 p-1.5 rounded text-red-400"><Icons.FileText size={16}/></div>
                                           <div>
                                               <div className="text-sm font-bold text-slate-200">{doc.name}</div>
-                                              <div className="text-[10px] text-slate-500">{doc.fileName}</div>
+                                              <div className="text-[10px] text-slate-500">{doc.fileName} <span className="text-blue-400 ml-2">→ Sobre {doc.targetEnvelope || 'A'}</span></div>
                                           </div>
                                       </div>
-                                      <div className="flex items-center gap-2">
-                                          <select className="bg-slate-900 border border-slate-600 rounded text-xs text-white p-1" value={doc.targetEnvelope || 'A'} onChange={(e)=>updateDocEnvelope(i, e.target.value)}>
-                                              <option value="A">Sobre A</option>
-                                              <option value="B">Sobre B</option>
-                                              <option value="C">Sobre C</option>
-                                          </select>
-                                          <button onClick={()=>removeDoc(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={16}/></button>
-                                      </div>
+                                      <button onClick={()=>removeDoc(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={16}/></button>
                                   </div>
                               ))}
                           </div>
@@ -621,27 +629,20 @@
           const [margen, setMargen] = useState(10); 
           const [baja, setBaja] = useState(0);
           
-          const [lastSelectedId, setLastSelectedId] = usePersistentState('last_selected_company_id', '');
-          const [selectedCompanyId, setSelectedCompanyId] = useState(() => {
-              if (lastSelectedId && companies.find(c => c.id == lastSelectedId)) return lastSelectedId;
-              if (companies.length > 0) return companies[0].id;
-              return '';
-          });
-
+          // Selección de empresa con persistencia
+          const [selectedCompanyId, setSelectedCompanyId] = usePersistentState('last_selected_company', '');
           const [reportVisible, setReportVisible] = useState(false);
           const [offerStep, setOfferStep] = useState(0);
 
           const [aiAdvice, setAiAdvice] = useState({ economic: '', technical: '' });
           const [loadingAdvice, setLoadingAdvice] = useState(false);
 
-          // Estado para el Chat y Preguntas Sugeridas
           const [chatInput, setChatInput] = useState("");
           const [chatHistory, setChatHistory] = useState([]);
           const [chatLoading, setChatLoading] = useState(false);
           const [suggestedQuestions, setSuggestedQuestions] = useState([]);
           const chatEndRef = useRef(null);
 
-          // Envelope Files State (Init from Tender or empty)
           const [envelopeFiles, setEnvelopeFiles] = useState({ A: [], B: [], C: [] });
 
           useEffect(() => { if (localTender.envelopeFiles) { setEnvelopeFiles(localTender.envelopeFiles); } }, []);
@@ -651,36 +652,56 @@
               dbActions.put(DB_STORES.TENDERS, null, updatedTender);
           }, [envelopeFiles]);
 
-          // Scroll para el chat
           useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory]);
 
-          // Auto-fill envelopes logic based on company selection
+          // Auto-seleccionar empresa al cargar si no hay una seleccionada
           useEffect(() => {
-              if (selectedCompanyId) {
-                  setLastSelectedId(selectedCompanyId);
-                  const company = companies.find(c => c.id == selectedCompanyId);
-                  if (company && company.recurringDocs) {
-                      setEnvelopeFiles(prev => {
-                          const newEnvelopes = { ...prev };
-                          let changed = false;
-                          company.recurringDocs.forEach(doc => {
-                              const env = doc.targetEnvelope || 'A';
-                              const exists = newEnvelopes[env].some(f => f.refId === doc.fileId);
-                              if (!exists) {
-                                  newEnvelopes[env] = [...newEnvelopes[env], {
-                                      id: `ref_${doc.fileId}_${Date.now()}`, 
-                                      name: doc.name,
-                                      refId: doc.fileId, 
-                                      isReference: true 
-                                  }];
-                                  changed = true;
-                              }
-                          });
-                          return changed ? newEnvelopes : prev;
-                      });
-                  }
+              if (!selectedCompanyId && companies.length > 0) {
+                  setSelectedCompanyId(companies[0].id);
               }
-          }, [selectedCompanyId]);
+          }, [companies]);
+
+          // Auto-poblar documentos recurrentes cuando cambia la empresa
+          useEffect(() => {
+              const populateRecurringDocs = async () => {
+                  if (!selectedCompanyId) return;
+                  const company = companies.find(c => c.id == selectedCompanyId);
+                  if (!company || !company.recurringDocs) return;
+
+                  // Clonamos el estado actual para no modificarlo directamente en el loop
+                  let updatedEnvelopes = { ...envelopeFiles };
+                  let changed = false;
+
+                  for (const doc of company.recurringDocs) {
+                      const targetEnv = doc.targetEnvelope || 'A';
+                      // Verificar si ya existe un archivo con ese nombre en el sobre para evitar duplicados
+                      const exists = updatedEnvelopes[targetEnv]?.some(f => f.name === doc.name);
+                      
+                      if (!exists) {
+                          // Clonar el archivo en la BD para que sea independiente de la empresa
+                          const originalBlob = await dbActions.get(DB_STORES.FILES, doc.fileId);
+                          if (originalBlob) {
+                              const newFileId = `env_${targetEnv}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                              await dbActions.put(DB_STORES.FILES, newFileId, originalBlob);
+                              
+                              updatedEnvelopes[targetEnv] = [
+                                  ...updatedEnvelopes[targetEnv], 
+                                  { id: newFileId, name: doc.name }
+                              ];
+                              changed = true;
+                          }
+                      }
+                  }
+
+                  if (changed) {
+                      setEnvelopeFiles(updatedEnvelopes);
+                  }
+              };
+
+              populateRecurringDocs();
+          }, [selectedCompanyId]); 
+          // Nota: Dependencia companies agregada implícitamente por lógica, pero solo queremos que dispare al cambiar ID.
+
 
           const pbl = localTender.analysis?.datos_economicos?.pbl_sin_iva || 0;
           
@@ -725,10 +746,8 @@
           };
 
           const deleteEnvelopeFile = async (envelopeType, idx) => {
-             const fileItem = envelopeFiles[envelopeType][idx];
-             if (!fileItem.isReference) {
-                 await dbActions.del(DB_STORES.FILES, fileItem.id);
-             }
+             const fileId = envelopeFiles[envelopeType][idx].id;
+             await dbActions.del(DB_STORES.FILES, fileId);
              const newList = [...envelopeFiles[envelopeType]];
              newList.splice(idx, 1);
              setEnvelopeFiles(prev => ({ ...prev, [envelopeType]: newList }));
@@ -825,7 +844,7 @@
                               <option value="">-- Selecciona con qué empresa vas a licitar --</option>
                               {companies.map(c => <option key={c.id} value={c.id}>{c.name} ({c.cif})</option>)}
                           </select>
-                          {selectedCompanyId && <div className="mt-2 text-green-400 text-xs flex items-center gap-2"><Icons.Check size={14}/> Empresa seleccionada. Documentación recurrente cargada en sobres.</div>}
+                          {selectedCompanyId && <div className="mt-2 text-green-400 text-xs flex items-center gap-2"><Icons.Check size={14}/> Empresa seleccionada. Documentación recurrente cargada.</div>}
                       </div>
 
                       <div className="relative pl-8 space-y-8">
@@ -861,7 +880,7 @@
                                           <div className="bg-slate-900 p-4 rounded border border-slate-700">
                                               <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre A</span><label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1"><Icons.Plus size={12}/> Adjuntar Archivo<input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'A')} /></label></div>
                                               {envelopeFiles.A.length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos (Ej: DEUC, Escrituras, Garantía).</p>}
-                                              <div className="space-y-1">{envelopeFiles.A.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name} {f.isReference && <span className="text-[9px] bg-blue-500/30 text-blue-300 px-1 rounded ml-2">AUTO</span>}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.isReference ? f.refId : f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('A', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
+                                              <div className="space-y-1">{envelopeFiles.A.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('A', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
                                           </div>
                                           <div className="flex justify-end gap-2"><button onClick={()=>setOfferStep(2)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Todo listo, ir al Sobre B &rarr;</button></div>
                                       </div>
@@ -882,7 +901,7 @@
                                           <div className="bg-slate-900 p-4 rounded border border-slate-700">
                                               <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre B</span><label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1"><Icons.Plus size={12}/> Adjuntar Archivo<input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'B')} /></label></div>
                                               {envelopeFiles.B.length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos (Ej: Memoria Técnica).</p>}
-                                              <div className="space-y-1">{envelopeFiles.B.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name} {f.isReference && <span className="text-[9px] bg-blue-500/30 text-blue-300 px-1 rounded ml-2">AUTO</span>}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.isReference ? f.refId : f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('B', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
+                                              <div className="space-y-1">{envelopeFiles.B.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('B', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
                                           </div>
                                           <div className="flex justify-end gap-2"><button onClick={()=>setOfferStep(3)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Documentación Técnica lista &rarr;</button></div>
                                       </div>
@@ -901,7 +920,7 @@
                                           <div className="bg-slate-900 p-4 rounded border border-slate-700">
                                               <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre C</span><label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1"><Icons.Plus size={12}/> Adjuntar Archivo<input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'C')} /></label></div>
                                               {envelopeFiles.C.length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos.</p>}
-                                              <div className="space-y-1">{envelopeFiles.C.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name} {f.isReference && <span className="text-[9px] bg-blue-500/30 text-blue-300 px-1 rounded ml-2">AUTO</span>}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.isReference ? f.refId : f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('C', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
+                                              <div className="space-y-1">{envelopeFiles.C.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('C', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
                                           </div>
                                           <div className="flex justify-end gap-2"><button onClick={()=>setOfferStep(4)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Oferta Generada. Finalizar &rarr;</button></div>
                                       </div>
@@ -939,6 +958,150 @@
                   </div>
               );
           };
+
+          return (
+              <div className="h-full flex flex-col bg-[#0a0a0a]">
+                  <header className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center no-print">
+                      <div className="flex items-center gap-4">
+                          <button onClick={onBack} className="text-slate-400 hover:text-white"><Icons.Briefcase size={20} className="rotate-90" /></button>
+                          <div>
+                              <h2 className="text-lg font-bold text-white truncate max-w-md">{localTender.title}</h2>
+                              <div className="flex items-center gap-2 text-xs text-slate-400">
+                                  <span className={`px-2 py-0.5 rounded ${localTender.status==='Nueva'?'bg-blue-900 text-blue-300':'bg-amber-900 text-amber-300'}`}>{localTender.status}</span>
+                                  {localTender.analysis?.resumen_ejecutivo?.numero_expediente && <span>Exp: {localTender.analysis.resumen_ejecutivo.numero_expediente}</span>}
+                              </div>
+                          </div>
+                      </div>
+                      <div className="flex bg-slate-800 p-1 rounded-lg">
+                           {[1,2,3,4,5].map(t => (
+                               <button key={t} onClick={()=>setActiveTab(t)} className={`px-4 py-2 rounded text-xs font-bold transition-all ${activeTab===t ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>
+                                   {t===1 && "1. Documentos"} {t===2 && "2. Análisis"} {t===3 && "3. Consultas IA"} {t===4 && "4. Económica"} {t===5 && "5. Oferta"}
+                               </button>
+                           ))}
+                      </div>
+                  </header>
+                  <main className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                      <div className="max-w-5xl mx-auto">
+                          {activeTab === 1 && (
+                              <div className="space-y-6 fade-in no-print">
+                                  <div className="glass-panel p-8 rounded-2xl text-center border-dashed border-2 border-slate-700 hover:border-blue-500 transition-colors">
+                                      <div className="mb-4 text-blue-500 flex justify-center"><Icons.Upload size={48} /></div>
+                                      <h3 className="text-xl font-bold text-white mb-2">Subir Pliegos (PDF)</h3>
+                                      <p className="text-slate-400 text-sm mb-6">Sube el PCAP y PPT. La IA leerá el texto para extraer los datos.</p>
+                                      <label className="btn-primary px-8 py-3 rounded-xl cursor-pointer shadow-lg inline-flex items-center gap-2">
+                                          {pdfProcessing ? <Icons.Loader/> : <Icons.Plus/>} Seleccionar Archivos
+                                          <input type="file" multiple accept="application/pdf" className="hidden" onChange={handlePdfUpload} disabled={pdfProcessing}/>
+                                      </label>
+                                  </div>
+                                  {localTender.files.length > 0 && (
+                                      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                                          <div className="p-4 bg-slate-800/50 font-bold text-slate-300 text-sm">Archivos del Expediente</div>
+                                          {localTender.files.map((f, i) => (
+                                              <div key={i} className="p-4 border-b border-slate-800 flex justify-between items-center last:border-0">
+                                                  <div className="flex items-center gap-3"><div className="bg-red-900/20 text-red-400 p-2 rounded"><Icons.FileText size={18}/></div><span className="text-sm text-slate-200">{f.name}</span></div>
+                                                  <div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-slate-500 hover:text-blue-400 p-2"><Icons.Download size={18}/></button><button onClick={()=>handleDeleteFile(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={18}/></button></div>
+                                              </div>
+                                          ))}
+                                          <div className="p-4 bg-slate-800/30 flex justify-end"><button onClick={runAnalysis} disabled={isAnalyzing} className="btn-primary px-6 py-2 rounded-lg flex items-center gap-2 text-sm shadow-lg shadow-blue-900/30">{isAnalyzing ? <Icons.Loader/> : <Icons.BrainCircuit/>} {isAnalyzing ? 'Analizando Pliego...' : 'EJECUTAR ANÁLISIS IA'}</button></div>
+                                      </div>
+                                  )}
+                              </div>
+                          )}
+                          {activeTab === 2 && (
+                              <div className="fade-in space-y-6 no-print">
+                                  {!localTender.analysis ? (
+                                      <div className="text-center py-20 text-slate-500"><Icons.BrainCircuit size={48} className="mx-auto mb-4 opacity-50"/><p>No hay análisis aún. Ve a la pestaña "Documentos" y ejecútalo.</p></div>
+                                  ) : (
+                                      <>
+                                          <div className="flex justify-end mb-4 gap-2">
+                                               <button onClick={window.print} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-600"><Icons.Printer size={16}/> Imprimir</button>
+                                               <button onClick={()=>setReportVisible(!reportVisible)} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-600"><Icons.FileText size={16}/> {reportVisible ? 'Ocultar Informe' : 'Ver Informe de Texto'}</button>
+                                          </div>
+                                          {reportVisible && (<div className="glass-panel p-6 rounded-xl mb-6 border border-blue-500/30 relative group"><div className="absolute top-4 right-4"><CopyBtn text={generateReportText(localTender.analysis)}/></div><h4 className="text-blue-400 text-sm font-bold uppercase mb-4 tracking-wider">Informe Completo</h4><div className="bg-slate-900 p-6 rounded text-xs text-slate-300 font-mono whitespace-pre-wrap select-all max-h-96 overflow-y-auto leading-relaxed border border-slate-700">{generateReportText(localTender.analysis)}</div></div>)}
+                                          <div className="glass-panel p-6 rounded-xl relative"><div className="absolute top-4 right-4"><CopyBtn text={JSON.stringify(localTender.analysis.resumen_ejecutivo, null, 2)}/></div><h4 className="text-blue-400 text-sm font-bold uppercase mb-4 tracking-wider flex items-center gap-2"><Icons.Building size={16}/> Resumen Ejecutivo</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm"><div><div className="text-xs text-slate-500">Organismo</div><div className="text-white font-bold">{localTender.analysis.resumen_ejecutivo?.organismo}</div></div><div><div className="text-xs text-slate-500">Expediente</div><div className="text-white">{localTender.analysis.resumen_ejecutivo?.numero_expediente}</div></div><div className="col-span-full"><div className="text-xs text-slate-500">Objeto Detallado</div><div className="text-white italic">{localTender.analysis.resumen_ejecutivo?.objeto_detallado}</div></div><div><div className="text-xs text-slate-500">Localización</div><div className="text-white">{localTender.analysis.resumen_ejecutivo?.localizacion}</div></div><div><div className="text-xs text-slate-500">CPV</div><div className="text-white font-mono">{localTender.analysis.resumen_ejecutivo?.cpv}</div></div></div></div>
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                              <div className="glass-panel p-6 rounded-xl relative"><div className="absolute top-4 right-4"><CopyBtn text={JSON.stringify(localTender.analysis.datos_economicos, null, 2)}/></div><h4 className="text-green-400 text-sm font-bold uppercase mb-4 tracking-wider flex items-center gap-2"><Icons.Calculator size={16}/> Económico y Plazos</h4><div className="space-y-4"><div className="flex justify-between items-center border-b border-slate-700 pb-2"><span className="text-sm text-slate-400">PBL (Sin IVA)</span><span className="text-green-400 font-bold font-mono text-lg">{formatCurrency(localTender.analysis.datos_economicos?.pbl_sin_iva)}</span></div><div className="flex justify-between items-center"><span className="text-sm text-slate-400">Plazo Ejecución</span><span className="text-white font-bold">{localTender.analysis.plazos_fechas?.plazo_ejecucion}</span></div><div className="bg-slate-900/50 p-3 rounded border border-slate-700 mt-2"><div className="text-[10px] text-blue-300 font-bold flex items-center gap-1 mb-1"><Icons.Clock size={10}/> FECHA LÍMITE PRESENTACIÓN</div><div className="text-white font-bold">{localTender.analysis.plazos_fechas?.fecha_limite_presentacion || 'Consultar Plataforma'}</div></div></div></div>
+                                              <div className="glass-panel p-6 rounded-xl relative"><div className="absolute top-4 right-4"><CopyBtn text={JSON.stringify(localTender.analysis.requisitos_admision, null, 2)}/></div><h4 className="text-amber-400 text-sm font-bold uppercase mb-4 tracking-wider flex items-center gap-2"><Icons.AlertTriangle size={16}/> Admisión y Solvencia</h4><div className="space-y-3 text-sm"><div><div className="text-xs text-slate-500">Clasificación</div><div className="text-yellow-200 font-mono font-bold bg-yellow-900/20 px-2 py-1 rounded inline-block">{localTender.analysis.requisitos_admision?.clasificacion_exigida || 'No exigida'}</div></div><div><div className="text-xs text-slate-500">Solvencia Técnica</div><div className="text-slate-300 text-xs">{localTender.analysis.requisitos_admision?.solvencia_tecnica || 'Según pliegos'}</div></div></div></div>
+                                          </div>
+                                      </>
+                                  )}
+                              </div>
+                          )}
+                          {activeTab === 3 && (
+                              <div className="fade-in h-[600px] glass-panel rounded-2xl flex flex-col overflow-hidden border border-slate-700 no-print">
+                                  <div className="bg-slate-800/80 p-4 border-b border-slate-700 flex justify-between items-center">
+                                      <div className="flex items-center gap-3">
+                                          <div className="bg-blue-500/20 p-2 rounded text-blue-400"><Icons.MessageSquare size={20}/></div>
+                                          <div>
+                                              <h3 className="font-bold text-white text-sm">Interrogatorio de Documentación</h3>
+                                              <p className="text-xs text-slate-400">Pregunta sobre el pliego. Respuestas basadas estrictamente en el texto subido.</p>
+                                          </div>
+                                      </div>
+                                      {suggestedQuestions.length === 0 && localTender.rawText && (
+                                          <button onClick={handleGenerateSuggestions} className="text-xs bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 border border-slate-500 transition-colors">
+                                              <Icons.Sparkles size={14} className="text-yellow-400"/> Sugerir Preguntas Clave
+                                          </button>
+                                      )}
+                                  </div>
+                                  <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-900/50 custom-scrollbar">
+                                      {suggestedQuestions.length > 0 && chatHistory.length === 0 && (
+                                          <div className="mb-4">
+                                              <p className="text-xs text-slate-500 uppercase font-bold mb-3 flex items-center gap-2"><Icons.Sparkles size={12}/> Sugerencias de la IA:</p>
+                                              <div className="flex flex-wrap gap-2">
+                                                  {suggestedQuestions.map((q, i) => (
+                                                      <button key={i} onClick={()=>handleChatSend(q)} className="bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl px-4 py-2 text-xs text-blue-300 transition-colors text-left hover:scale-[1.02] active:scale-95">
+                                                          {q}
+                                                      </button>
+                                                  ))}
+                                              </div>
+                                          </div>
+                                      )}
+                                      {chatHistory.length === 0 && suggestedQuestions.length === 0 && (
+                                          <div className="flex flex-col items-center justify-center h-full text-slate-500 opacity-50">
+                                              <Icons.MessageSquare size={48} className="mb-2"/>
+                                              <p className="text-sm">Envía una pregunta para comenzar...</p>
+                                          </div>
+                                      )}
+                                      {chatHistory.map((msg, idx) => (
+                                          <div key={idx} className={`chat-bubble ${msg.role === 'user' ? 'chat-user' : 'chat-ai'} flex flex-col`}>
+                                              <div className="whitespace-pre-wrap">{msg.text}</div>
+                                              {msg.role === 'ai' && <div className="mt-2 self-end opacity-70 hover:opacity-100 transition-opacity"><CopyBtn text={msg.text} className="bg-black/20 hover:bg-black/40"/></div>}
+                                          </div>
+                                      ))}
+                                      {chatLoading && <div className="flex justify-start"><div className="bg-slate-800 p-3 rounded-xl border border-slate-700"><Icons.Loader className="text-blue-500"/></div></div>}
+                                      <div ref={chatEndRef} />
+                                  </div>
+                                  <div className="p-4 bg-slate-800 border-t border-slate-700 flex gap-2">
+                                      <input type="text" className="input-std" placeholder="Ej: ¿Hay visita obligatoria a la obra?" value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=> e.key === 'Enter' && handleChatSend()}/>
+                                      <button onClick={()=>handleChatSend()} disabled={!chatInput.trim() || chatLoading} className="bg-blue-600 hover:bg-blue-500 text-white p-3 rounded-lg disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20"><Icons.Send/></button>
+                                  </div>
+                              </div>
+                          )}
+                          {activeTab === 4 && (
+                              <div className="fade-in max-w-3xl mx-auto no-print">
+                                  <div className="glass-panel p-8 rounded-2xl shadow-2xl">
+                                      <div className="flex items-center justify-between gap-3 mb-8 pb-4 border-b border-slate-700">
+                                          <div className="flex items-center gap-3"><div className="p-3 bg-green-500/20 text-green-400 rounded-xl"><Icons.Calculator size={32}/></div><div><h3 className="text-2xl font-bold text-white">Calculadora de Oferta</h3><p className="text-sm text-slate-400">Estudio de costes y baja</p></div></div>
+                                          <button onClick={()=>getAdvice('economic')} className="text-xs bg-blue-600 px-3 py-1 rounded text-white font-bold hover:bg-blue-500 flex items-center gap-2">{loadingAdvice ? <Icons.Loader/> : <Icons.BrainCircuit/>} Consultar Estrategia a la IA</button>
+                                      </div>
+                                      {aiAdvice.economic && (<div className="mb-6 bg-slate-800 p-4 rounded-lg border-l-4 border-blue-500 fade-in"><h5 className="font-bold text-blue-300 text-sm mb-2">Análisis de Mercado (IA)</h5><div className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">{aiAdvice.economic}</div></div>)}
+                                      <div className="grid grid-cols-2 gap-8 mb-8"><div><label className="text-xs text-slate-400 font-bold block mb-2">Costes Directos + Indirectos (€)</label><input type="number" className="input-std text-right font-mono text-lg" value={costes} onChange={e=>setCostes(parseFloat(e.target.value)||0)} /></div><div><label className="text-xs text-slate-400 font-bold block mb-2">Margen Industrial Deseado (%)</label><input type="number" className="input-std text-right font-mono text-lg text-yellow-400 border-yellow-500/30" value={margen} onChange={e=>setMargen(parseFloat(e.target.value)||0)} /></div></div>
+                                      <div className="bg-slate-900 rounded-xl p-6 border border-slate-700 space-y-6"><div className="flex justify-between items-center"><span className="text-slate-400 text-sm">Presupuesto Base (PBL)</span><span className="text-white font-mono font-bold">{formatCurrency(pbl)}</span></div><div className="flex justify-between items-center"><span className="text-blue-400 text-sm font-bold">Precio de Venta Objetivo</span><span className="text-blue-300 font-mono font-bold text-xl">{formatCurrency(costes * (1 + margen/100))}</span></div><div className="h-px bg-slate-700 my-2"></div><div><label className="flex justify-between text-sm mb-2"><span className="text-white font-bold">Baja a Ofertar (%)</span> <span className="text-green-400 font-mono font-bold text-xl">{baja.toFixed(2)}%</span></label><input type="range" min="0" max="60" step="0.01" className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500" value={baja} onChange={e=>setBaja(parseFloat(e.target.value))} /></div><div className="grid grid-cols-2 gap-4 pt-4"><div className="bg-black/30 p-3 rounded border border-slate-600"><div className="text-[10px] text-slate-500 uppercase">Importe Oferta (Sin IVA)</div><div className="text-white font-mono font-bold text-lg">{formatCurrency(precioOfertado)}</div></div><div className="bg-black/30 p-3 rounded border border-slate-600"><div className="text-[10px] text-slate-500 uppercase">Resultado Neto</div><div className={`font-mono font-bold text-lg ${beneficio >= 0 ? 'text-green-400' : 'text-red-500'}`}>{formatCurrency(beneficio)}</div></div></div></div>
+                                  </div>
+                              </div>
+                          )}
+                          {activeTab === 5 && renderBidAssistant()}
+                      </div>
+                      <div className="print-only hidden p-8 bg-white text-black">
+                         <h1 className="text-2xl font-bold mb-4">Resumen Técnico: {localTender.title}</h1>
+                         <div className="whitespace-pre-wrap font-mono text-sm border-b pb-4 mb-4">{generateReportText(localTender.analysis)}</div>
+                         {aiAdvice.economic && (<div className="mb-4"><h2 className="text-lg font-bold">Estrategia Económica</h2><p className="text-sm whitespace-pre-wrap">{aiAdvice.economic}</p></div>)}
+                         <div className="mb-4"><strong>Oferta Final:</strong> {formatCurrency(precioOfertado)} (Baja: {baja.toFixed(2)}%)</div>
+                      </div>
+                  </main>
+              </div>
+          );
+      };
 
       const Dashboard = ({ tenders, setTenders, onOpenTender, showPrompt }) => {
           const handleNew = () => {
