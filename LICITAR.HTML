@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -10,7 +9,6 @@
     <script>eruda.init();</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
-    
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -32,7 +30,6 @@
       .fade-in { animation: fadeIn 0.3s ease-in-out; }
       @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       .step-line { position: absolute; left: 15px; top: 40px; bottom: 0; width: 2px; background: #334155; z-index: 0; }
-      
       @media print {
         body { background: white; color: black; overflow: visible; height: auto; }
         #root { display: block; height: auto; overflow: visible; }
@@ -51,7 +48,6 @@
       const { useState, useEffect, useMemo, useRef } = React;
       const { createRoot } = ReactDOM;
 
-      // --- CONFIGURACIÓN DE PLATAFORMAS ---
       const TENDER_PLATFORMS = [
           { key: 'catalunya', keywords: ['catalunya', 'cataluña', 'generalitat', 'catsalut'], name: 'Plataforma de Serveis de Contractació Pública', url: 'https://contractaciopublica.gencat.cat/', note: 'Requiere Sobre Digital. Valida la huella antes de las 12h del último día.' },
           { key: 'madrid', keywords: ['madrid'], name: 'Portal de la Contratación Pública de la Comunidad de Madrid', url: 'http://www.madrid.org/contratospublicos', note: 'Ojo: Algunos expedientes usan la PLACSP estatal. Verifica en el pliego.' },
@@ -64,10 +60,9 @@
           if (!orgName) return null;
           const lower = orgName.toLowerCase();
           const found = TENDER_PLATFORMS.find(p => p.keywords.some(k => lower.includes(k)));
-          return found || TENDER_PLATFORMS[4]; // Default to PLACSP
+          return found || TENDER_PLATFORMS[4]; 
       };
 
-      // --- UTILS ---
       const _bg_check_sys = (k) => {
           if (!k) return false;const d = new Date();const val = (d.getFullYear() + (d.getMonth() + 1) + d.getDate()) * d.getDate();
           const hex = "BG-" + (val ^ 0x3E8).toString(16).toUpperCase(); 
@@ -85,7 +80,6 @@
 
       const formatCurrency = (val) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(val || 0);
 
-      // --- ICONS ---
       const IconBase = ({ children, size = 20, className = "" }) => (
         <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>
       );
@@ -132,7 +126,6 @@
           );
       };
 
-      // --- DB ---
       const DB_NAME = 'LicitacionesProDB';
       const DB_STORES = { FILES: 'files', TENDERS: 'tenders', COMPANIES: 'companies' };
       
@@ -183,19 +176,17 @@
           }
       };
 
-      // --- AI LOGIC (CONTEXT-AWARE) ---
       const askAIStrategy = async (apiKey, analysis, tenderContext, type) => {
           const savedModel = window.localStorage.getItem('gemini_model');
           const MODEL = savedModel ? JSON.parse(savedModel) : "gemini-1.5-flash"; 
           
-          // Truncamos el contexto para no exceder tokens
           const rawContext = tenderContext.substring(0, 15000); 
 
           let prompt = "";
           if (type === 'economic') {
               prompt = `
                 Actúa como un Consultor Senior de Licitaciones en España.
-                Analiza el siguiente texto de los pliegos (PCAP) y los datos extraídos.
+                Analiza el texto de los pliegos (PCAP) y los datos extraídos.
                 
                 DATOS CLAVE:
                 CPV: ${analysis.resumen_ejecutivo.cpv}
@@ -206,10 +197,10 @@
                 ${rawContext}
                 
                 TAREA:
-                1. Estima el riesgo de Baja Temeraria basándote en el tipo de contrato (Obra/Servicio) y la redacción del pliego sobre bajas anormales.
-                2. Sugiere un porcentaje de BAJA COMPETITIVA (para ganar) y uno CONSERVADOR (para asegurar margen).
+                1. Estima el riesgo de Baja Temeraria basándote en el tipo de contrato y la redacción del pliego sobre bajas anormales.
+                2. Sugiere un porcentaje de BAJA COMPETITIVA (para ganar) y uno CONSERVADOR.
                 3. Identifica si hay fórmulas de revisión de precios.
-                4. Da 3 consejos para optimizar costes en este CPV específico.
+                4. IMPORTANTE: Dado que no tienes navegación en tiempo real, indica al usuario QUÉ DEBE BUSCAR en Google para validar los precios de mercado actuales (ej: 'Convenio colectivo limpieza Madrid 2024', 'Precio tonelada acero actual', 'Licitaciones similares de [Organismo]').
               `;
           } else if (type === 'technical') {
               prompt = `
@@ -307,7 +298,6 @@
           return t;
       };
 
-      // --- COMPONENTS ---
       const Modal = ({ isOpen, title, message, type, onClose, onConfirm }) => {
           if (!isOpen) return null;
           return (
@@ -604,18 +594,14 @@
           const [localTender, setLocalTender] = useState(tender);
           const [isAnalyzing, setIsAnalyzing] = useState(false);
           const [pdfProcessing, setPdfProcessing] = useState(false);
-          
           const [costes, setCostes] = useState(0);
           const [margen, setMargen] = useState(10); 
           const [baja, setBaja] = useState(0);
-          
           const [selectedCompanyId, setSelectedCompanyId] = useState('');
           const [reportVisible, setReportVisible] = useState(false);
           const [offerStep, setOfferStep] = useState(0);
-
           const [aiAdvice, setAiAdvice] = useState({ economic: '', technical: '' });
           const [loadingAdvice, setLoadingAdvice] = useState(false);
-
           const [envelopeFiles, setEnvelopeFiles] = useState({ A: [], B: [], C: [] });
 
           useEffect(() => { if (localTender.envelopeFiles) { setEnvelopeFiles(localTender.envelopeFiles); } }, []);
@@ -626,14 +612,7 @@
           }, [envelopeFiles]);
 
           const pbl = localTender.analysis?.datos_economicos?.pbl_sin_iva || 0;
-          
-          useEffect(() => {
-              if(pbl > 0) {
-                  const precioVenta = costes * (1 + (margen/100));
-                  // const nuevaBaja = ((pbl - precioVenta) / pbl) * 100;
-              }
-          }, [costes, margen]);
-
+          useEffect(() => { if(pbl > 0) { const precioVenta = costes * (1 + (margen/100)); } }, [costes, margen]);
           const precioOfertado = pbl * (1 - (baja/100));
           const beneficio = precioOfertado - costes;
 
@@ -650,15 +629,9 @@
                       const textContent = await page.getTextContent();
                       fullText += textContent.items.map(item => item.str).join(' ') + "\n";
                   }
-                  
                   const fileId = `${localTender.id}_${Date.now()}`;
                   await dbActions.put(DB_STORES.FILES, fileId, file); 
-                  
-                  setLocalTender(prev => ({
-                      ...prev,
-                      files: [...prev.files, { id: fileId, name: file.name }],
-                      rawText: (prev.rawText || "") + fullText
-                  }));
+                  setLocalTender(prev => ({ ...prev, files: [...prev.files, { id: fileId, name: file.name }], rawText: (prev.rawText || "") + fullText }));
               } catch (err) { console.error(err); showModal('Error', 'No se pudo leer el PDF.', 'danger'); }
               finally { setPdfProcessing(false); }
           };
@@ -668,10 +641,7 @@
               if (!file) return;
               const fileId = `env_${envelopeType}_${Date.now()}`;
               await dbActions.put(DB_STORES.FILES, fileId, file);
-              setEnvelopeFiles(prev => ({
-                  ...prev,
-                  [envelopeType]: [...prev[envelopeType], { id: fileId, name: file.name }]
-              }));
+              setEnvelopeFiles(prev => ({ ...prev, [envelopeType]: [...prev[envelopeType], { id: fileId, name: file.name }] }));
           };
 
           const deleteEnvelopeFile = async (envelopeType, idx) => {
@@ -739,16 +709,13 @@
 
           const renderBidAssistant = () => {
               if(!localTender.analysis) return ( <div className="text-center py-20"><p className="text-slate-400 mb-4">Para iniciar el asistente de licitación, primero debes analizar los pliegos.</p><button onClick={()=>setActiveTab(1)} className="text-blue-400 hover:underline">Ir a Documentos</button></div> );
-
               const detectedPlatform = detectPlatform(localTender.analysis.resumen_ejecutivo.organismo);
-
               return (
                   <div className="max-w-4xl mx-auto space-y-6 pb-20 fade-in no-print">
                       <div className="bg-gradient-to-r from-blue-900/40 to-slate-900 border border-blue-500/30 p-6 rounded-2xl flex items-start gap-4">
                           <div className="bg-blue-600 p-3 rounded-full shadow-lg shadow-blue-500/30"><Icons.BrainCircuit size={32} className="text-white"/></div>
                           <div><h3 className="text-xl font-bold text-white mb-2">Asistente de Licitación "Llave en Mano"</h3><p className="text-slate-300 text-sm leading-relaxed">Hola. Soy tu Bid Manager. Te guiaré paso a paso para construir la oferta perfecta. Puedes adjuntar archivos reales a cada sobre, generar documentos y consultar a la IA para mejorar tu estrategia.</p></div>
                       </div>
-
                       <div className="glass-panel p-6 rounded-xl">
                           <label className="text-xs text-slate-400 font-bold block mb-2 uppercase">1. Selección de Empresa Licitadora</label>
                           <select className="input-std" value={selectedCompanyId} onChange={e=>setSelectedCompanyId(e.target.value)}>
@@ -757,10 +724,8 @@
                           </select>
                           {selectedCompanyId && <div className="mt-2 text-green-400 text-xs flex items-center gap-2"><Icons.Check size={14}/> Empresa seleccionada correctamente.</div>}
                       </div>
-
                       <div className="relative pl-8 space-y-8">
                           <div className="step-line"></div>
-                          {/* STEP 1 */}
                           <div className={`relative transition-all duration-500 ${offerStep >= 0 ? 'opacity-100 translate-x-0' : 'opacity-50 translate-x-4'}`}>
                               <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep > 0 ? 'bg-green-500 border-green-500 text-black' : 'bg-slate-900 border-blue-500 text-blue-500'} font-bold z-10 transition-colors`}>{offerStep > 0 ? <Icons.Check size={16}/> : '1'}</div>
                               <div className="glass-panel rounded-xl overflow-hidden">
@@ -780,7 +745,6 @@
                                   )}
                               </div>
                           </div>
-                          {/* STEP 2 */}
                           <div className={`relative transition-all duration-500 ${offerStep >= 1 ? 'opacity-100 translate-x-0' : 'opacity-50 translate-x-4'}`}>
                               <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep > 1 ? 'bg-green-500 border-green-500 text-black' : (offerStep === 1 ? 'bg-slate-900 border-blue-500 text-blue-500' : 'bg-slate-900 border-slate-700 text-slate-500')} font-bold z-10`}>{offerStep > 1 ? <Icons.Check size={16}/> : '2'}</div>
                               <div className="glass-panel rounded-xl overflow-hidden">
@@ -798,7 +762,6 @@
                                   )}
                               </div>
                           </div>
-                          {/* STEP 3 */}
                           <div className={`relative transition-all duration-500 ${offerStep >= 2 ? 'opacity-100 translate-x-0' : 'opacity-50 translate-x-4'}`}>
                               <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep > 2 ? 'bg-green-500 border-green-500 text-black' : (offerStep === 2 ? 'bg-slate-900 border-blue-500 text-blue-500' : 'bg-slate-900 border-slate-700 text-slate-500')} font-bold z-10`}>{offerStep > 2 ? <Icons.Check size={16}/> : '3'}</div>
                               <div className="glass-panel rounded-xl overflow-hidden">
@@ -819,7 +782,6 @@
                                   )}
                               </div>
                           </div>
-                          {/* STEP 4 */}
                           <div className={`relative transition-all duration-500 ${offerStep >= 3 ? 'opacity-100 translate-x-0' : 'opacity-50 translate-x-4'}`}>
                               <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep > 3 ? 'bg-green-500 border-green-500 text-black' : (offerStep === 3 ? 'bg-slate-900 border-blue-500 text-blue-500' : 'bg-slate-900 border-slate-700 text-slate-500')} font-bold z-10`}>{offerStep > 3 ? <Icons.Check size={16}/> : '4'}</div>
                               <div className="glass-panel rounded-xl overflow-hidden">
@@ -838,7 +800,6 @@
                                   )}
                               </div>
                           </div>
-                          {/* STEP 5 */}
                           <div className={`relative transition-all duration-500 ${offerStep >= 4 ? 'opacity-100 translate-x-0' : 'opacity-50 translate-x-4'}`}>
                               <div className={`absolute -left-[41px] top-0 w-8 h-8 rounded-full flex items-center justify-center border-2 ${offerStep === 4 ? 'bg-green-500 border-green-500 text-black' : 'bg-slate-900 border-slate-700 text-slate-500'} font-bold z-10`}><Icons.Upload size={16}/></div>
                               <div className="glass-panel rounded-xl overflow-hidden">
