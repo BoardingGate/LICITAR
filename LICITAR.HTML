@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -6,15 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>BoardingGate - LicitacionesPro</title>
     
-    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-    <script>eruda.init();</script>
+    <!-- Dependencias -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    
+    <!-- React & Babel -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
     
     <style>
       html, body { margin: 0; padding: 0; width: 100%; height: 100dvh; overflow: hidden; background-color: #0a0a0a; font-family: 'Inter', sans-serif; color: #e5e5e5; }
@@ -31,6 +35,7 @@
       .fade-in { animation: fadeIn 0.3s ease-in-out; }
       @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       .step-line { position: absolute; left: 15px; top: 40px; bottom: 0; width: 2px; background: #334155; z-index: 0; }
+      
       @media print {
         body { background: white; color: black; overflow: visible; height: auto; }
         #root { display: block; height: auto; overflow: visible; }
@@ -49,30 +54,20 @@
       const { useState, useEffect, useMemo, useRef } = React;
       const { createRoot } = ReactDOM;
 
-      // --- CONFIGURACIÓN DE PLATAFORMAS DE LICITACIÓN ---
+      // --- CONFIGURACIÓN DE PLATAFORMAS ---
       const TENDER_PLATFORMS = [
           { key: 'placsp', keywords: ['ministerio', 'estatal', 'seguridad social', 'adif', 'aena', 'ine', 'estado'], name: 'Plataforma de Contratación del Sector Público (PLACSP)', url: 'https://contrataciondelestado.es/', note: 'Plataforma Estatal. Requiere Autofirma.' },
-          { key: 'catalunya', keywords: ['catalunya', 'cataluña', 'generalitat de catalunya', 'catsalut', 'incasol'], name: 'Plataforma de Serveis de Contractació Pública (Generalitat de Catalunya)', url: 'https://contractaciopublica.gencat.cat/', note: 'Herramienta Sobre Digital. Validar huella antes de las 12h.' },
-          { key: 'madrid', keywords: ['madrid', 'canal de isabel'], name: 'Portal de la Contratación Pública de la Comunidad de Madrid', url: 'http://www.madrid.org/contratospublicos', note: 'Requiere Licit@. A veces redirige a PLACSP.' },
-          { key: 'andalucia', keywords: ['andalucía', 'andalucia', 'junta de andalucía', 'sas'], name: 'Plataforma de Contratación de la Junta de Andalucía', url: 'https://www.juntadeandalucia.es/temas/contratacion-publica/perfiles-licitaciones/plataforma.html', note: 'Sistema SiREC. Verifica versión de Java.' },
-          { key: 'euskadi', keywords: ['euskadi', 'vasco', 'vasca', 'osakidetza'], name: 'Plataforma de Contratación Pública en Euskadi', url: 'https://www.contratacion.euskadi.eus/', note: 'Requiere firma electrónica avanzada y aplicación de licitación.' },
-          { key: 'galicia', keywords: ['galicia', 'xunta', 'sergas'], name: 'Plataforma de Contratos Públicos de Galicia', url: 'https://www.contratosdegalicia.gal/', note: 'Sistema propio. Clave o Certificado.' },
-          { key: 'valencia', keywords: ['valencia', 'valenciana', 'generalitat valenciana'], name: 'Plataforma de Contratación de la Generalitat Valenciana', url: 'https://contratacion.gva.es/', note: 'Suele usar la PLACSP para la presentación, verificar en pliego.' },
-          { key: 'canarias', keywords: ['canarias', 'gobierno de canarias'], name: 'Plataforma de Contratación del Sector Público de Canarias', url: 'https://www.gobiernodecanarias.org/hacienda/junta_consultiva/perfil_contratante/', note: 'Verificar si usa PLACSP o Vortal.' },
-          { key: 'rioja', keywords: ['rioja'], name: 'Perfil de Contratante del Gobierno de La Rioja', url: 'https://www.larioja.org/contratacion-publica/es', note: 'Integrado mayormente con PLACSP.' },
-          { key: 'navarra', keywords: ['navarra', 'cfnavarra'], name: 'Portal de Contratación de Navarra', url: 'https://www.navarra.es/home_es/Servicios/PortalContratacion/', note: 'Plataforma propia. PLENA.' },
-          { key: 'murcia', keywords: ['murcia'], name: 'Perfil de Contratante CARM', url: 'https://sede.carm.es/', note: 'Revisar sede electrónica.' },
-          { key: 'aragon', keywords: ['aragón', 'aragon'], name: 'Perfil de Contratante Gobierno de Aragón', url: 'https://www.aragon.es/contratacion-publica', note: 'Plataforma propia.' },
-          { key: 'castillaleon', keywords: ['castilla y león', 'castilla y leon', 'cyl'], name: 'Plataforma de Contratación de Castilla y León', url: 'https://www.contratacion.jcyl.es/', note: 'Duero.' },
-          { key: 'castillalamancha', keywords: ['castilla-la mancha', 'castilla la mancha', 'jccm'], name: 'Perfil de Contratante JCCM', url: 'https://contratacion.castillalamancha.es/', note: 'Portal de Contratación CLM.' },
-          { key: 'extremadura', keywords: ['extremadura', 'juntaex'], name: 'Plataforma de Contratación de Extremadura', url: 'https://contratacion.juntaex.es/', note: 'Licitación electrónica.' },
-          { key: 'baleares', keywords: ['baleares', 'balears', 'ibsalut'], name: 'Plataforma de Contratación de las Illes Balears', url: 'https://www.caib.es/sites/contractaciopublica/es/inici-72262/', note: 'Integración PLACSP frecuente.' },
-          { key: 'asturias', keywords: ['asturias', 'principado'], name: 'Perfil de Contratante Principado de Asturias', url: 'https://sede.asturias.es/', note: 'Verificar sede.' },
-          { key: 'cantabria', keywords: ['cantabria'], name: 'Perfil de Contratante de Cantabria', url: 'https://contratacion.cantabria.es/', note: 'Plataforma propia.' }
+          { key: 'catalunya', keywords: ['catalunya', 'cataluña', 'generalitat', 'catsalut', 'incasol'], name: 'Plataforma de Serveis de Contractació Pública', url: 'https://contractaciopublica.gencat.cat/', note: 'Requiere Sobre Digital. Valida la huella antes de las 12h.' },
+          { key: 'madrid', keywords: ['madrid', 'canal de isabel'], name: 'Portal de Contratación de Madrid', url: 'http://www.madrid.org/contratospublicos', note: 'Requiere Licit@. A veces redirige a PLACSP.' },
+          { key: 'andalucia', keywords: ['andalucía', 'andalucia', 'junta'], name: 'Plataforma de Contratación de Andalucía', url: 'https://www.juntadeandalucia.es/temas/contratacion-publica/perfiles-licitaciones/plataforma.html', note: 'Usa el componente SiREC. Prepara Java.' },
+          { key: 'euskadi', keywords: ['euskadi', 'vasco', 'vasca'], name: 'Contratación Pública en Euskadi', url: 'https://www.contratacion.euskadi.eus/', note: 'Requiere firma electrónica avanzada.' },
+          { key: 'galicia', keywords: ['galicia', 'xunta'], name: 'Contratos Públicos de Galicia', url: 'https://www.contratosdegalicia.gal/', note: 'Sistema propio. Clave o Certificado.' },
+          { key: 'valencia', keywords: ['valencia', 'valenciana', 'gva'], name: 'Plataforma de Contratación GVA', url: 'https://contratacion.gva.es/', note: 'Suele usar la PLACSP para presentación.' },
+          { key: 'canarias', keywords: ['canarias', 'gobierno de canarias'], name: 'Plataforma de Contratación de Canarias', url: 'https://www.gobiernodecanarias.org/hacienda/junta_consultiva/perfil_contratante/', note: 'Verificar si usa PLACSP o Vortal.' }
       ];
 
       const detectPlatform = (orgName) => {
-          if (!orgName) return TENDER_PLATFORMS[0]; // Default to PLACSP
+          if (!orgName) return TENDER_PLATFORMS[0]; 
           const lower = orgName.toLowerCase();
           const found = TENDER_PLATFORMS.find(p => p.keywords.some(k => lower.includes(k)));
           return found || TENDER_PLATFORMS[0]; 
@@ -80,7 +75,7 @@
 
       // --- UTILS ---
       const _bg_check_sys = (k) => {
-          if (!k) return false;const d = new Date();const val = (d.getFullYear() + (d.getMonth() + 1) + d.getDate()) * d.getDate();
+          if (!k) return false; const d = new Date(); const val = (d.getFullYear() + (d.getMonth() + 1) + d.getDate()) * d.getDate();
           const hex = "BG-" + (val ^ 0x3E8).toString(16).toUpperCase(); 
           return k.trim().toUpperCase() === hex || k.trim() === val.toString();
       };
@@ -143,7 +138,7 @@
           );
       };
 
-      // --- DB ---
+      // --- DATABASE ---
       const DB_NAME = 'LicitacionesProDB';
       const DB_STORES = { FILES: 'files', TENDERS: 'tenders', COMPANIES: 'companies' };
       
@@ -194,7 +189,7 @@
           }
       };
 
-      // --- AI LOGIC (CONTEXT-AWARE) ---
+      // --- AI LOGIC ---
       const askAIStrategy = async (apiKey, analysis, tenderContext, type) => {
           const savedModel = window.localStorage.getItem('gemini_model');
           const MODEL = savedModel ? JSON.parse(savedModel) : "gemini-1.5-flash"; 
@@ -218,8 +213,7 @@
                 TAREA:
                 1. Estima el riesgo de Baja Temeraria basándote en el tipo de contrato y la redacción del pliego sobre bajas anormales.
                 2. Sugiere un porcentaje de BAJA COMPETITIVA (para ganar) y uno CONSERVADOR.
-                3. Identifica si hay fórmulas de revisión de precios.
-                4. IMPORTANTE: Dado que no tienes navegación en tiempo real, indica al usuario QUÉ TÉRMINOS Y WEBS DEBE BUSCAR en Google para validar los precios de mercado actuales (ej: 'Convenio colectivo limpieza Madrid 2024 tablas salariales', 'Precio tonelada acero actual', 'Licitaciones similares de [Organismo]'). Sé muy específico con las búsquedas.
+                3. IMPORTANTE: Dado que no tienes navegación en tiempo real, indica al usuario QUÉ TÉRMINOS Y WEBS DEBE BUSCAR en Google para validar los precios de mercado actuales (ej: 'Convenio colectivo limpieza Madrid 2024 tablas salariales', 'Precio tonelada acero actual', 'Licitaciones similares de [Organismo]'). Sé muy específico con las búsquedas.
               `;
           } else if (type === 'technical') {
               prompt = `
@@ -232,7 +226,6 @@
                 TAREA:
                 Identifica los criterios de valoración subjetivos (Juicio de Valor) en el texto proporcionado.
                 Propón 3 MEJORAS TÉCNICAS o metodológicas CONCRETAS que encajen *perfectamente* con lo que pide este pliego.
-                No inventes mejoras genéricas. Si el pliego pide "Plan de Calidad", sugiere una mejora específica (ej: ISO específica). Si pide "Reducción de Plazo", calcula la óptima.
                 Justifica cada mejora citando por qué da puntos según el texto.
               `;
           }
@@ -278,42 +271,14 @@
           t += `NÚMERO DE EXPEDIENTE:     ${analysis.resumen_ejecutivo?.numero_expediente || 'No detectado'}\n`;
           t += `TÍTULO DEL PROYECTO:      ${analysis.resumen_ejecutivo?.titulo_expediente || 'No detectado'}\n`;
           t += `LOCALIZACIÓN:             ${analysis.resumen_ejecutivo?.localizacion || 'No detectado'}\n`;
-          t += `TIPO DE CONTRATO:         ${analysis.resumen_ejecutivo?.tipo_contrato || '-'}\n`;
-          t += `CÓDIGO CPV PRINCIPAL:     ${analysis.resumen_ejecutivo?.cpv || '-'}\n\n`;
-          t += `OBJETO DETALLADO:\n${analysis.resumen_ejecutivo?.objeto_detallado || 'Ver pliegos'}\n\n\n`;
-          t += "2. DATOS ECONÓMICOS Y PLAZOS DE EJECUCIÓN\n" + div;
+          t += "2. DATOS ECONÓMICOS Y PLAZOS\n" + div;
           t += `PRESUPUESTO BASE (PBL):   ${formatCurrency(analysis.datos_economicos?.pbl_sin_iva)} (Sin IVA)\n`;
           t += `VALOR ESTIMADO (VEC):     ${formatCurrency(analysis.datos_economicos?.valor_estimado)}\n`;
           t += `PLAZO DE EJECUCIÓN:       ${analysis.plazos_fechas?.plazo_ejecucion || 'Consultar'}\n`;
-          t += `REVISIÓN DE PRECIOS:      ${analysis.datos_economicos?.revision_precios || 'No detectada'}\n`;
-          t += `FECHA LÍMITE OFERTAS:     ${analysis.plazos_fechas?.fecha_limite_presentacion || 'Consultar plataforma'}\n\n\n`;
-          t += "3. REQUISITOS DE SOLVENCIA Y ADMISIÓN\n" + div;
-          t += `CLASIFICACIÓN EXIGIDA:    ${analysis.requisitos_admision?.clasificacion_exigida || 'NO SE REQUIERE'}\n\n`;
-          t += "SOLVENCIA TÉCNICA REQUERIDA:\n" + `${analysis.requisitos_admision?.solvencia_tecnica || 'Según lo establecido en el PCAP.'}\n\n`;
-          t += "SOLVENCIA ECONÓMICA REQUERIDA:\n" + `${analysis.requisitos_admision?.solvencia_economica || 'Según lo establecido en el PCAP.'}\n\n`;
+          t += `FECHA LÍMITE OFERTAS:     ${analysis.plazos_fechas?.fecha_limite_presentacion || 'Consultar plataforma'}\n`;
+          t += "3. REQUISITOS DE SOLVENCIA\n" + div;
+          t += `CLASIFICACIÓN EXIGIDA:    ${analysis.requisitos_admision?.clasificacion_exigida || 'NO SE REQUIERE'}\n`;
           t += `GARANTÍA PROVISIONAL:     ${analysis.requisitos_admision?.garantia_provisional || 'NO'}\n`;
-          t += `ADSCRIPCIÓN DE MEDIOS:    ${analysis.requisitos_admision?.adscripcion_medios || 'Ver pliegos'}\n\n\n`;
-          t += "4. CRITERIOS DE VALORACIÓN DE OFERTAS\n" + div;
-          if(analysis.criterios_adjudicacion?.formulas_automaticas?.length > 0){
-              t += "A) CRITERIOS EVALUABLES MEDIANTE FÓRMULAS (AUTOMÁTICOS):\n";
-              analysis.criterios_adjudicacion.formulas_automaticas.forEach(c => {
-                  t += `   - ${c.descripcion.toUpperCase()}: ${c.puntos} Puntos\n`;
-                  if(c.formula_resumen) t += `     (Detalle: ${c.formula_resumen})\n`;
-              });
-              t += "\n";
-          }
-          if(analysis.criterios_adjudicacion?.juicio_valor?.length > 0){
-              t += "B) CRITERIOS DEPENDIENTES DE JUICIO DE VALOR (MEMORIA TÉCNICA):\n";
-              analysis.criterios_adjudicacion.juicio_valor.forEach(c => {
-                  t += `   - ${c.descripcion.toUpperCase()}: ${c.puntos} Puntos\n`;
-                  if(c.contenido_clave) t += `     (Claves: ${c.contenido_clave})\n`;
-              });
-              t += "\n";
-          }
-          t += "\n";
-          t += "5. CONDICIONES ESPECIALES Y PENALIDADES\n" + div;
-          if(analysis.condiciones_especiales?.subcontratacion) t += `SUBCONTRATACIÓN: ${analysis.condiciones_especiales.subcontratacion}\n`;
-          if(analysis.condiciones_especiales?.penalidades) t += `PENALIDADES: ${analysis.condiciones_especiales.penalidades}\n`;
           return t;
       };
 
@@ -351,10 +316,7 @@
                   <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-8 shadow-2xl">
                       <h3 className="text-xl font-bold text-white mb-2 uppercase">{title}</h3>
                       <p className="text-slate-400 text-sm mb-4">{message}</p>
-                      <input 
-                          autoFocus type="text" className="input-std mb-6" placeholder={placeholder} value={val} 
-                          onChange={e=>setVal(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') onConfirm(val); }} 
-                      />
+                      <input autoFocus type="text" className="input-std mb-6" placeholder={placeholder} value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') onConfirm(val); }} />
                       <div className="flex gap-3">
                           <button onClick={() => { setVal(''); onClose(); }} className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-colors">CANCELAR</button>
                           <button onClick={() => { onConfirm(val); setVal(''); }} disabled={!val.trim()} className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-colors disabled:opacity-50">ACEPTAR</button>
@@ -413,16 +375,6 @@
                               </div>
                               {testStatus === 'error' && <div className="mt-4 p-4 bg-red-900/30 border border-red-500/50 rounded-xl text-red-200 text-xs font-mono whitespace-pre-wrap">{errorDetail}</div>}
                           </div>
-                          <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4">
-                              <h4 className="text-blue-400 font-bold text-sm mb-2 flex items-center gap-2"><Icons.HelpCircle size={16}/> ¿Cómo obtener la API Key?</h4>
-                              <ol className="text-sm text-slate-300 space-y-3 list-decimal pl-4 mb-4">
-                                  <li>Accede a <strong>Google AI Studio</strong> con tu cuenta de Google (botón abajo).</li>
-                                  <li>Haz clic en el botón azul <strong>"Get API key"</strong> en la esquina superior izquierda.</li>
-                                  <li>En el cuadro emergente, haz clic en <strong>"Create API key in new project"</strong>.</li>
-                                  <li>Cópiala y pégala en el campo "Google Gemini API Key".</li>
-                              </ol>
-                              <a href="https://aistudio.google.com/app/apikey" target="_blank" className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-lg"><Icons.ExternalLink size={16}/> Ir a Google AI Studio</a>
-                          </div>
                       </div>
                   </div>
                   <div className="max-w-2xl w-full bg-slate-900/80 border border-slate-800 rounded-2xl p-8 shadow-2xl mb-20">
@@ -431,7 +383,6 @@
                           <div><h2 className="text-2xl font-bold text-white">Registro de la aplicación</h2><p className="text-slate-400 text-sm">Estado de la instalación y licencia</p></div>
                       </div>
                       <div className="space-y-6">
-                          <p className="text-sm text-slate-400 leading-relaxed italic">Esta plataforma es un proyecto independiente que se sustenta exclusivamente mediante un modelo de <strong>crowdfunding</strong> y las aportaciones directas de sus usuarios.</p>
                           <div className="bg-black/30 border border-slate-700 rounded-xl p-5">
                               <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Número de Registro / Código de Instalación</label>
                               <div className="flex gap-3">
