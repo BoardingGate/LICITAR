@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>BoardingGate - LicitacionesPro v2</title>
+    <title>BoardingGate - LicitacionesPro v2.1</title>
     
     <!-- Librerías Externas -->
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
@@ -452,12 +452,12 @@
           );
       };
 
-      const CompanyManager = ({ companies, setCompanies, showModal }) => {
+      const CompanyManager = ({ companies, setCompanies, showModal, showPrompt }) => {
           const [mode, setMode] = useState('list'); 
           const [form, setForm] = useState(null);
           const [processing, setProcessing] = useState(false);
           const [logoPreview, setLogoPreview] = useState(null);
-          const [targetEnv, setTargetEnv] = useState('A'); // Selector de Sobre por defecto
+          const [targetEnv, setTargetEnv] = useState('A'); 
 
           const defaultCompany = { id: null, name: '', cif: '', address: '', repName: '', repDni: '', notary: '', registryData: '', classification: '', recurringDocs: [], logoId: null };
 
@@ -500,12 +500,13 @@
           };
 
           const handleAddUrl = () => {
-              const url = prompt("Introduce la URL del enlace (ej: https://drive.google.com/...):");
-              if (!url) return;
-              setForm(prev => ({
-                  ...prev,
-                  recurringDocs: [...prev.recurringDocs, { name: "Enlace Web: " + url.substring(0,20) + "...", fileId: `url_${Date.now()}`, fileName: url, targetEnvelope: targetEnv, type: 'url', url: url }]
-              }));
+              showPrompt('Añadir Enlace Web', 'Introduce la URL del documento (Drive, Dropbox, etc):', 'https://...', (url) => {
+                  if (!url) return;
+                  setForm(prev => ({
+                      ...prev,
+                      recurringDocs: [...prev.recurringDocs, { name: "Enlace Web: " + url.substring(0,20) + "...", fileId: `url_${Date.now()}`, fileName: url, targetEnvelope: targetEnv, type: 'url', url: url }]
+                  }));
+              });
           };
 
           const handleLogoUpload = async (e) => {
@@ -632,7 +633,7 @@
           );
       };
 
-      const Workspace = ({ tender, onBack, apiKey, companies, showModal }) => {
+      const Workspace = ({ tender, onBack, apiKey, companies, showModal, showPrompt }) => {
           const [activeTab, setActiveTab] = useState(1); 
           const [localTender, setLocalTender] = useState(tender);
           const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -752,13 +753,14 @@
 
           const handleEnvelopeItem = async (e, envelopeType, type) => {
               if (type === 'url') {
-                  const url = prompt("Introduce la URL del enlace:");
-                  if (!url) return;
-                  const fileId = `url_${envelopeType}_${Date.now()}`;
-                  setEnvelopeFiles(prev => ({
-                      ...prev,
-                      [envelopeType]: [...prev[envelopeType], { id: fileId, name: "Enlace: " + url, type: 'url', url: url }]
-                  }));
+                  showPrompt('Añadir Enlace Externo', 'Pega aquí el enlace al documento:', 'https://...', (url) => {
+                      if (!url) return;
+                      const fileId = `url_${envelopeType}_${Date.now()}`;
+                      setEnvelopeFiles(prev => ({
+                          ...prev,
+                          [envelopeType]: [...prev[envelopeType], { id: fileId, name: "Enlace: " + url, type: 'url', url: url }]
+                      }));
+                  });
               } else {
                   const file = e.target.files[0];
                   if (!file) return;
@@ -1253,8 +1255,8 @@
                   )}
                   <div className="flex-1 overflow-hidden relative">
                       {view === 'dashboard' && <Dashboard tenders={tenders} setTenders={setTenders} onOpenTender={handleOpenTender} showPrompt={showPrompt} showModal={showModal} />}
-                      {view === 'companies' && <CompanyManager companies={companies} setCompanies={setCompanies} showModal={showModal} />}
-                      {view === 'workspace' && activeTender && <Workspace tender={activeTender} onBack={()=>setView('dashboard')} apiKey={apiKey} companies={companies} showModal={showModal} />}
+                      {view === 'companies' && <CompanyManager companies={companies} setCompanies={setCompanies} showModal={showModal} showPrompt={showPrompt} />}
+                      {view === 'workspace' && activeTender && <Workspace tender={activeTender} onBack={()=>setView('dashboard')} apiKey={apiKey} companies={companies} showModal={showModal} showPrompt={showPrompt} />}
                       {view === 'settings' && <SettingsTab isAuth={isAuth} trialCount={tc} onActivate={handleActivate} />}
                   </div>
                   <Modal isOpen={modal.open} title={modal.title} message={modal.message} type={modal.type} onClose={() => setModal({ ...modal, open: false })} onConfirm={modal.onConfirm ? () => { modal.onConfirm(); setModal({ ...modal, open: false }); } : null}/>
