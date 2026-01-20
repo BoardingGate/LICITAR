@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -48,21 +49,36 @@
       const { useState, useEffect, useMemo, useRef } = React;
       const { createRoot } = ReactDOM;
 
+      // --- CONFIGURACIÓN DE PLATAFORMAS DE LICITACIÓN ---
       const TENDER_PLATFORMS = [
-          { key: 'catalunya', keywords: ['catalunya', 'cataluña', 'generalitat', 'catsalut'], name: 'Plataforma de Serveis de Contractació Pública', url: 'https://contractaciopublica.gencat.cat/', note: 'Requiere Sobre Digital. Valida la huella antes de las 12h del último día.' },
-          { key: 'madrid', keywords: ['madrid'], name: 'Portal de la Contratación Pública de la Comunidad de Madrid', url: 'http://www.madrid.org/contratospublicos', note: 'Ojo: Algunos expedientes usan la PLACSP estatal. Verifica en el pliego.' },
-          { key: 'andalucia', keywords: ['andalucía', 'andalucia', 'junta'], name: 'Plataforma de Contratación de la Junta de Andalucía', url: 'https://www.juntadeandalucia.es/temas/contratacion-publica/perfiles-licitaciones/plataforma.html', note: 'Usa el componente SiREC. Prepara Java.' },
-          { key: 'euskadi', keywords: ['euskadi', 'vasco', 'vasca'], name: 'Contratación Pública en Euskadi', url: 'https://www.contratacion.euskadi.eus/', note: 'Requiere firma electrónica avanzada.' },
-          { key: 'placsp', keywords: ['ministerio', 'estatal', 'seguridad social', 'adif', 'aena'], name: 'Plataforma de Contratación del Sector Público (PLACSP)', url: 'https://contrataciondelestado.es/', note: 'La plataforma estándar. Requiere Autofirma. No esperes al último minuto.' }
+          { key: 'placsp', keywords: ['ministerio', 'estatal', 'seguridad social', 'adif', 'aena', 'ine', 'estado'], name: 'Plataforma de Contratación del Sector Público (PLACSP)', url: 'https://contrataciondelestado.es/', note: 'Plataforma Estatal. Requiere Autofirma.' },
+          { key: 'catalunya', keywords: ['catalunya', 'cataluña', 'generalitat de catalunya', 'catsalut', 'incasol'], name: 'Plataforma de Serveis de Contractació Pública (Generalitat de Catalunya)', url: 'https://contractaciopublica.gencat.cat/', note: 'Herramienta Sobre Digital. Validar huella antes de las 12h.' },
+          { key: 'madrid', keywords: ['madrid', 'canal de isabel'], name: 'Portal de la Contratación Pública de la Comunidad de Madrid', url: 'http://www.madrid.org/contratospublicos', note: 'Requiere Licit@. A veces redirige a PLACSP.' },
+          { key: 'andalucia', keywords: ['andalucía', 'andalucia', 'junta de andalucía', 'sas'], name: 'Plataforma de Contratación de la Junta de Andalucía', url: 'https://www.juntadeandalucia.es/temas/contratacion-publica/perfiles-licitaciones/plataforma.html', note: 'Sistema SiREC. Verifica versión de Java.' },
+          { key: 'euskadi', keywords: ['euskadi', 'vasco', 'vasca', 'osakidetza'], name: 'Plataforma de Contratación Pública en Euskadi', url: 'https://www.contratacion.euskadi.eus/', note: 'Requiere firma electrónica avanzada y aplicación de licitación.' },
+          { key: 'galicia', keywords: ['galicia', 'xunta', 'sergas'], name: 'Plataforma de Contratos Públicos de Galicia', url: 'https://www.contratosdegalicia.gal/', note: 'Sistema propio. Clave o Certificado.' },
+          { key: 'valencia', keywords: ['valencia', 'valenciana', 'generalitat valenciana'], name: 'Plataforma de Contratación de la Generalitat Valenciana', url: 'https://contratacion.gva.es/', note: 'Suele usar la PLACSP para la presentación, verificar en pliego.' },
+          { key: 'canarias', keywords: ['canarias', 'gobierno de canarias'], name: 'Plataforma de Contratación del Sector Público de Canarias', url: 'https://www.gobiernodecanarias.org/hacienda/junta_consultiva/perfil_contratante/', note: 'Verificar si usa PLACSP o Vortal.' },
+          { key: 'rioja', keywords: ['rioja'], name: 'Perfil de Contratante del Gobierno de La Rioja', url: 'https://www.larioja.org/contratacion-publica/es', note: 'Integrado mayormente con PLACSP.' },
+          { key: 'navarra', keywords: ['navarra', 'cfnavarra'], name: 'Portal de Contratación de Navarra', url: 'https://www.navarra.es/home_es/Servicios/PortalContratacion/', note: 'Plataforma propia. PLENA.' },
+          { key: 'murcia', keywords: ['murcia'], name: 'Perfil de Contratante CARM', url: 'https://sede.carm.es/', note: 'Revisar sede electrónica.' },
+          { key: 'aragon', keywords: ['aragón', 'aragon'], name: 'Perfil de Contratante Gobierno de Aragón', url: 'https://www.aragon.es/contratacion-publica', note: 'Plataforma propia.' },
+          { key: 'castillaleon', keywords: ['castilla y león', 'castilla y leon', 'cyl'], name: 'Plataforma de Contratación de Castilla y León', url: 'https://www.contratacion.jcyl.es/', note: 'Duero.' },
+          { key: 'castillalamancha', keywords: ['castilla-la mancha', 'castilla la mancha', 'jccm'], name: 'Perfil de Contratante JCCM', url: 'https://contratacion.castillalamancha.es/', note: 'Portal de Contratación CLM.' },
+          { key: 'extremadura', keywords: ['extremadura', 'juntaex'], name: 'Plataforma de Contratación de Extremadura', url: 'https://contratacion.juntaex.es/', note: 'Licitación electrónica.' },
+          { key: 'baleares', keywords: ['baleares', 'balears', 'ibsalut'], name: 'Plataforma de Contratación de las Illes Balears', url: 'https://www.caib.es/sites/contractaciopublica/es/inici-72262/', note: 'Integración PLACSP frecuente.' },
+          { key: 'asturias', keywords: ['asturias', 'principado'], name: 'Perfil de Contratante Principado de Asturias', url: 'https://sede.asturias.es/', note: 'Verificar sede.' },
+          { key: 'cantabria', keywords: ['cantabria'], name: 'Perfil de Contratante de Cantabria', url: 'https://contratacion.cantabria.es/', note: 'Plataforma propia.' }
       ];
 
       const detectPlatform = (orgName) => {
-          if (!orgName) return null;
+          if (!orgName) return TENDER_PLATFORMS[0]; // Default to PLACSP
           const lower = orgName.toLowerCase();
           const found = TENDER_PLATFORMS.find(p => p.keywords.some(k => lower.includes(k)));
-          return found || TENDER_PLATFORMS[4]; 
+          return found || TENDER_PLATFORMS[0]; 
       };
 
+      // --- UTILS ---
       const _bg_check_sys = (k) => {
           if (!k) return false;const d = new Date();const val = (d.getFullYear() + (d.getMonth() + 1) + d.getDate()) * d.getDate();
           const hex = "BG-" + (val ^ 0x3E8).toString(16).toUpperCase(); 
@@ -80,6 +96,7 @@
 
       const formatCurrency = (val) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(val || 0);
 
+      // --- ICONS ---
       const IconBase = ({ children, size = 20, className = "" }) => (
         <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>
       );
@@ -126,6 +143,7 @@
           );
       };
 
+      // --- DB ---
       const DB_NAME = 'LicitacionesProDB';
       const DB_STORES = { FILES: 'files', TENDERS: 'tenders', COMPANIES: 'companies' };
       
@@ -176,6 +194,7 @@
           }
       };
 
+      // --- AI LOGIC (CONTEXT-AWARE) ---
       const askAIStrategy = async (apiKey, analysis, tenderContext, type) => {
           const savedModel = window.localStorage.getItem('gemini_model');
           const MODEL = savedModel ? JSON.parse(savedModel) : "gemini-1.5-flash"; 
@@ -200,7 +219,7 @@
                 1. Estima el riesgo de Baja Temeraria basándote en el tipo de contrato y la redacción del pliego sobre bajas anormales.
                 2. Sugiere un porcentaje de BAJA COMPETITIVA (para ganar) y uno CONSERVADOR.
                 3. Identifica si hay fórmulas de revisión de precios.
-                4. IMPORTANTE: Dado que no tienes navegación en tiempo real, indica al usuario QUÉ DEBE BUSCAR en Google para validar los precios de mercado actuales (ej: 'Convenio colectivo limpieza Madrid 2024', 'Precio tonelada acero actual', 'Licitaciones similares de [Organismo]').
+                4. IMPORTANTE: Dado que no tienes navegación en tiempo real, indica al usuario QUÉ TÉRMINOS Y WEBS DEBE BUSCAR en Google para validar los precios de mercado actuales (ej: 'Convenio colectivo limpieza Madrid 2024 tablas salariales', 'Precio tonelada acero actual', 'Licitaciones similares de [Organismo]'). Sé muy específico con las búsquedas.
               `;
           } else if (type === 'technical') {
               prompt = `
@@ -298,6 +317,7 @@
           return t;
       };
 
+      // --- COMPONENTS ---
       const Modal = ({ isOpen, title, message, type, onClose, onConfirm }) => {
           if (!isOpen) return null;
           return (
