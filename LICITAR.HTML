@@ -200,21 +200,11 @@
           } catch(e) { return "Error consultando a la IA: " + e.message; }
       };
 
-      // Nueva función para el Chat de Interrogación
       const askAIChat = async (apiKey, tenderData, userQuestion) => {
           const savedModel = window.localStorage.getItem('gemini_model');
           const MODEL = savedModel ? JSON.parse(savedModel) : "gemini-1.5-flash";
-          
-          // Usamos rawText si existe para que pueda responder sobre detalles del PDF
           const contextText = tenderData.rawText ? tenderData.rawText.substring(0, 50000) : "Sin documento base completo. Usa el análisis si es posible.";
-          
-          const prompt = `Actúa como un experto en licitaciones revisando este pliego.
-          CONTEXTO (Extracto del PCAP/PPT): "${contextText}"
-          
-          PREGUNTA DEL USUARIO: "${userQuestion}"
-          
-          INSTRUCCIÓN: Responde de forma precisa basándote SÓLO en el texto proporcionado. Si la respuesta no está en el documento, indícalo claramente. Sé breve y directo.`;
-
+          const prompt = `Actúa como un experto en licitaciones revisando este pliego. CONTEXTO (Extracto del PCAP/PPT): "${contextText}". PREGUNTA DEL USUARIO: "${userQuestion}". INSTRUCCIÓN: Responde de forma precisa basándote SÓLO en el texto proporcionado. Si la respuesta no está en el documento, indícalo claramente. Sé breve y directo.`;
           try {
               const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`, {
                   method: 'POST',
@@ -227,16 +217,12 @@
           } catch(e) { return "Error: " + e.message; }
       };
 
-      // Función para sugerir preguntas
       const generateSuggestedQuestions = async (apiKey, tenderData) => {
            const savedModel = window.localStorage.getItem('gemini_model');
            const MODEL = savedModel ? JSON.parse(savedModel) : "gemini-1.5-flash";
            const contextText = tenderData.rawText ? tenderData.rawText.substring(0, 15000) : "";
            if(!contextText) return [];
-
-           const prompt = `Analiza este pliego de licitación y genera 4 preguntas CRÍTICAS que un licitador debería hacerse para no cometer errores (ej: sobre solvencia, plazos, visitas obligatorias, subrogación personal). Devuelve SOLO las preguntas separadas por saltos de línea. Sin numeración.
-           TEXTO: "${contextText}"`;
-
+           const prompt = `Analiza este pliego de licitación y genera 4 preguntas CRÍTICAS que un licitador debería hacerse para no cometer errores (ej: sobre solvencia, plazos, visitas obligatorias, subrogación personal). Devuelve SOLO las preguntas separadas por saltos de línea. Sin numeración. TEXTO: "${contextText}"`;
            try {
               const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`, {
                   method: 'POST',
@@ -492,8 +478,15 @@
               setProcessing(true);
               const fileId = `doc_${Date.now()}`;
               await dbActions.put(DB_STORES.FILES, fileId, file); 
-              setForm(prev => ({ ...prev, recurringDocs: [...prev.recurringDocs, { name: file.name, fileId, fileName: file.name }] }));
+              // Por defecto asignamos al Sobre A si no se especifica
+              setForm(prev => ({ ...prev, recurringDocs: [...prev.recurringDocs, { name: file.name, fileId, fileName: file.name, targetEnvelope: 'A' }] }));
               setProcessing(false);
+          };
+
+          const updateDocEnvelope = (idx, env) => {
+              const newDocs = [...form.recurringDocs];
+              newDocs[idx].targetEnvelope = env;
+              setForm({...form, recurringDocs: newDocs});
           };
 
           const handleLogoUpload = async (e) => {
@@ -561,9 +554,19 @@
                                   <div key={i} className="flex items-center justify-between bg-slate-800 p-2 rounded border border-slate-700">
                                       <div className="flex items-center gap-3">
                                           <div className="bg-red-500/20 p-1.5 rounded text-red-400"><Icons.FileText size={16}/></div>
-                                          <div><div className="text-sm font-bold text-slate-200">{doc.name}</div><div className="text-[10px] text-slate-500">{doc.fileName}</div></div>
+                                          <div>
+                                              <div className="text-sm font-bold text-slate-200">{doc.name}</div>
+                                              <div className="text-[10px] text-slate-500">{doc.fileName}</div>
+                                          </div>
                                       </div>
-                                      <button onClick={()=>removeDoc(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={16}/></button>
+                                      <div className="flex items-center gap-2">
+                                          <select className="bg-slate-900 border border-slate-600 rounded text-xs text-white p-1" value={doc.targetEnvelope || 'A'} onChange={(e)=>updateDocEnvelope(i, e.target.value)}>
+                                              <option value="A">Sobre A</option>
+                                              <option value="B">Sobre B</option>
+                                              <option value="C">Sobre C</option>
+                                          </select>
+                                          <button onClick={()=>removeDoc(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={16}/></button>
+                                      </div>
                                   </div>
                               ))}
                           </div>
@@ -619,7 +622,13 @@
           const [margen, setMargen] = useState(10); 
           const [baja, setBaja] = useState(0);
           
-          const [selectedCompanyId, setSelectedCompanyId] = useState('');
+          const [lastSelectedId, setLastSelectedId] = usePersistentState('last_selected_company_id', '');
+          const [selectedCompanyId, setSelectedCompanyId] = useState(() => {
+              if (lastSelectedId && companies.find(c => c.id == lastSelectedId)) return lastSelectedId;
+              if (companies.length > 0) return companies[0].id;
+              return '';
+          });
+
           const [reportVisible, setReportVisible] = useState(false);
           const [offerStep, setOfferStep] = useState(0);
 
@@ -645,6 +654,35 @@
 
           // Scroll para el chat
           useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory]);
+
+          // Auto-fill envelopes logic based on company selection
+          useEffect(() => {
+              if (selectedCompanyId) {
+                  setLastSelectedId(selectedCompanyId);
+                  const company = companies.find(c => c.id == selectedCompanyId);
+                  if (company && company.recurringDocs) {
+                      setEnvelopeFiles(prev => {
+                          const newEnvelopes = { ...prev };
+                          let changed = false;
+                          company.recurringDocs.forEach(doc => {
+                              const env = doc.targetEnvelope || 'A';
+                              // Comprobar si ya existe para no duplicar (basado en fileId original)
+                              const exists = newEnvelopes[env].some(f => f.refId === doc.fileId);
+                              if (!exists) {
+                                  newEnvelopes[env] = [...newEnvelopes[env], {
+                                      id: `ref_${doc.fileId}_${Date.now()}`, // ID único en el array del sobre
+                                      name: doc.name,
+                                      refId: doc.fileId, // Referencia al archivo real en DB
+                                      isReference: true // Marca para saber que no hay que borrarlo de DB al quitarlo de la lista
+                                  }];
+                                  changed = true;
+                              }
+                          });
+                          return changed ? newEnvelopes : prev;
+                      });
+                  }
+              }
+          }, [selectedCompanyId]);
 
           const pbl = localTender.analysis?.datos_economicos?.pbl_sin_iva || 0;
           
@@ -689,8 +727,11 @@
           };
 
           const deleteEnvelopeFile = async (envelopeType, idx) => {
-             const fileId = envelopeFiles[envelopeType][idx].id;
-             await dbActions.del(DB_STORES.FILES, fileId);
+             const fileItem = envelopeFiles[envelopeType][idx];
+             // Solo borramos de DB si NO es una referencia (es decir, si fue subido manualmente en el sobre)
+             if (!fileItem.isReference) {
+                 await dbActions.del(DB_STORES.FILES, fileItem.id);
+             }
              const newList = [...envelopeFiles[envelopeType]];
              newList.splice(idx, 1);
              setEnvelopeFiles(prev => ({ ...prev, [envelopeType]: newList }));
@@ -724,7 +765,6 @@
               setLoadingAdvice(false);
           };
 
-          // Función para manejar el envío del chat
           const handleChatSend = async (msgOverride) => {
               const msg = msgOverride || chatInput;
               if(!msg.trim()) return;
@@ -747,6 +787,16 @@
           };
           
           const handleDownloadDoc = async (fileId, name) => {
+              // Si es referencia, usamos el ID original, si no, el ID del item
+              // Pero en el estado guardamos refId si es referencia.
+              // Logic check:
+              let actualId = fileId;
+              // Buscar en sobres para ver si es una referencia y obtener el ID real si es necesario
+              // Simplificación: dbActions.get funciona con la clave.
+              // Si es referencia, el ID en la lista es `ref_...` pero necesitamos el `refId`.
+              // El botón de descarga recibe directamente el ID. 
+              // En el render del sobre, si es ref, pasamos f.refId, si no f.id.
+              
               const fileBlob = await dbActions.get(DB_STORES.FILES, fileId);
               if(!fileBlob) { showModal('Error', 'Archivo no encontrado', 'danger'); return; }
               const url = URL.createObjectURL(fileBlob);
@@ -788,7 +838,7 @@
                               <option value="">-- Selecciona con qué empresa vas a licitar --</option>
                               {companies.map(c => <option key={c.id} value={c.id}>{c.name} ({c.cif})</option>)}
                           </select>
-                          {selectedCompanyId && <div className="mt-2 text-green-400 text-xs flex items-center gap-2"><Icons.Check size={14}/> Empresa seleccionada correctamente.</div>}
+                          {selectedCompanyId && <div className="mt-2 text-green-400 text-xs flex items-center gap-2"><Icons.Check size={14}/> Empresa seleccionada. Documentación recurrente cargada en sobres.</div>}
                       </div>
 
                       <div className="relative pl-8 space-y-8">
@@ -824,7 +874,7 @@
                                           <div className="bg-slate-900 p-4 rounded border border-slate-700">
                                               <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre A</span><label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1"><Icons.Plus size={12}/> Adjuntar Archivo<input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'A')} /></label></div>
                                               {envelopeFiles.A.length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos (Ej: DEUC, Escrituras, Garantía).</p>}
-                                              <div className="space-y-1">{envelopeFiles.A.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('A', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
+                                              <div className="space-y-1">{envelopeFiles.A.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name} {f.isReference && <span className="text-[9px] bg-blue-500/30 text-blue-300 px-1 rounded ml-2">AUTO</span>}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.isReference ? f.refId : f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('A', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
                                           </div>
                                           <div className="flex justify-end gap-2"><button onClick={()=>setOfferStep(2)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Todo listo, ir al Sobre B &rarr;</button></div>
                                       </div>
@@ -845,7 +895,7 @@
                                           <div className="bg-slate-900 p-4 rounded border border-slate-700">
                                               <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre B</span><label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1"><Icons.Plus size={12}/> Adjuntar Archivo<input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'B')} /></label></div>
                                               {envelopeFiles.B.length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos (Ej: Memoria Técnica).</p>}
-                                              <div className="space-y-1">{envelopeFiles.B.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('B', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
+                                              <div className="space-y-1">{envelopeFiles.B.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name} {f.isReference && <span className="text-[9px] bg-blue-500/30 text-blue-300 px-1 rounded ml-2">AUTO</span>}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.isReference ? f.refId : f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('B', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
                                           </div>
                                           <div className="flex justify-end gap-2"><button onClick={()=>setOfferStep(3)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Documentación Técnica lista &rarr;</button></div>
                                       </div>
@@ -864,7 +914,7 @@
                                           <div className="bg-slate-900 p-4 rounded border border-slate-700">
                                               <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400 uppercase">Documentos en Sobre C</span><label className="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white flex items-center gap-1"><Icons.Plus size={12}/> Adjuntar Archivo<input type="file" className="hidden" onChange={(e)=>handleEnvelopeUpload(e, 'C')} /></label></div>
                                               {envelopeFiles.C.length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos.</p>}
-                                              <div className="space-y-1">{envelopeFiles.C.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('C', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
+                                              <div className="space-y-1">{envelopeFiles.C.map((f, idx) => (<div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded"><span className="text-xs text-slate-300">{f.name} {f.isReference && <span className="text-[9px] bg-blue-500/30 text-blue-300 px-1 rounded ml-2">AUTO</span>}</span><div className="flex gap-2"><button onClick={()=>handleDownloadDoc(f.isReference ? f.refId : f.id, f.name)} className="text-blue-400 hover:text-white"><Icons.Download size={14}/></button><button onClick={()=>deleteEnvelopeFile('C', idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button></div></div>))}</div>
                                           </div>
                                           <div className="flex justify-end gap-2"><button onClick={()=>setOfferStep(4)} className="btn-primary px-6 py-2 rounded-lg text-sm font-bold">Oferta Generada. Finalizar &rarr;</button></div>
                                       </div>
@@ -1043,80 +1093,6 @@
                          <div className="mb-4"><strong>Oferta Final:</strong> {formatCurrency(precioOfertado)} (Baja: {baja.toFixed(2)}%)</div>
                       </div>
                   </main>
-              </div>
-          );
-      };
-
-      const Dashboard = ({ tenders, setTenders, onOpenTender, showPrompt }) => {
-          const handleNew = () => {
-              showPrompt('Nuevo Expediente', 'Introduce un título o referencia para identificar la licitación:', 'Ej: Obras Reforma Polideportivo...', async (title) => {
-                   const newT = { id: Date.now(), title, status: 'Nueva', files: [], analysis: null, envelopeFiles: {A:[], B:[], C:[]} };
-                   await dbActions.put(DB_STORES.TENDERS, null, newT);
-                   setTenders([newT, ...tenders]);
-              });
-          };
-
-          return (
-              <div className="p-6 h-full flex flex-col fade-in no-print">
-                   <div className="flex justify-between items-center mb-8">
-                      <div><h2 className="text-3xl font-display font-bold text-white tracking-tight">Expedientes</h2><p className="text-slate-400 text-sm">Gestión de licitaciones en curso</p></div>
-                      <button onClick={handleNew} className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2 shadow-lg shadow-blue-500/20"><Icons.Plus/> Nuevo Expediente</button>
-                  </div>
-                  {tenders.length === 0 ? <div className="col-span-full text-center py-20 text-slate-500 italic">No hay licitaciones activas. Crea una nueva.</div> : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-20 custom-scrollbar">
-                          {tenders.map(t => (
-                              <div key={t.id} onClick={()=>onOpenTender(t)} className="glass-panel p-6 rounded-2xl cursor-pointer hover:bg-slate-800/80 transition-all hover:scale-[1.01] group border-l-4 border-l-transparent hover:border-l-blue-500">
-                                  <div className="flex justify-between items-start mb-4"><div className="bg-slate-800 p-2 rounded text-slate-300 group-hover:text-blue-400 transition-colors"><Icons.Briefcase/></div><span className={`text-[10px] px-2 py-1 rounded font-bold uppercase ${t.status==='Nueva'?'bg-blue-900/30 text-blue-300':'bg-amber-900/30 text-amber-300'}`}>{t.status}</span></div>
-                                  <h3 className="text-lg font-bold text-white mb-2 line-clamp-2">{t.title}</h3>
-                                  {t.analysis ? (<div className="space-y-1"><div className="text-xs text-slate-400 truncate"><Icons.Building size={12} className="inline mr-1"/> {t.analysis.resumen_ejecutivo?.organismo}</div><div className="text-xs text-green-400 font-mono font-bold">{formatCurrency(t.analysis.datos_economicos?.pbl_sin_iva)}</div></div>) : (<div className="text-xs text-slate-500 italic">Pendiente de análisis...</div>)}
-                                  <div className="mt-4 pt-4 border-t border-slate-700/50 flex justify-between items-center"><span className="text-[10px] text-slate-500">{new Date(t.id).toLocaleDateString()}</span><span className="text-xs text-blue-400 font-bold group-hover:translate-x-1 transition-transform">Abrir &rarr;</span></div>
-                              </div>
-                          ))}
-                      </div>
-                  )}
-              </div>
-          );
-      };
-
-      const App = () => {
-          const [view, setView] = useState('dashboard'); 
-          const [tenders, setTenders] = useState([]);
-          const [companies, setCompanies] = useState([]);
-          const [activeTender, setActiveTender] = useState(null);
-          const [rk, setRk] = usePersistentState('bg_app_rk_st', ''); 
-          const [tc, setTc] = usePersistentState('bg_app_tc_st', 0); 
-          const isAuth = _bg_check_sys(rk);
-          const [modal, setModal] = useState({ open: false, title: '', message: '', type: '', onConfirm: null });
-          const [promptModal, setPromptModal] = useState({ open: false, title: '', message: '', placeholder: '', onConfirm: null });
-          const [apiKey] = usePersistentState('gemini_api_key', '');
-
-          useEffect(() => { const init = async () => { setTenders(await dbActions.getAll(DB_STORES.TENDERS)); setCompanies(await dbActions.getAll(DB_STORES.COMPANIES)); }; init(); }, [view]);
-
-          const showModal = (title, message, type = 'default', onConfirm = null) => { setModal({ open: true, title, message, type, onConfirm }); };
-          const showPrompt = (title, message, placeholder, onConfirm) => { setPromptModal({ open: true, title, message, placeholder, onConfirm }); };
-          const handleActivate = (code) => { if(!code) return; if(_bg_check_sys(code)) { setRk(code); showModal('ACTIVACIÓN ÉXITO', 'Sistema registrado.', 'success'); } else { setRk(''); showModal('ERROR', 'Código inválido.', 'danger'); } };
-          const handleOpenTender = (t) => { if (!isAuth && tc >= 10) { showModal('Prueba Finalizada', 'Límite de 10 licitaciones.', 'danger', () => setView('settings')); return; } if(!isAuth) setTc(prev => prev + 1); setActiveTender(t); setView('workspace'); };
-
-          return (
-              <div className="h-full flex flex-col text-white overflow-hidden">
-                  {view !== 'workspace' && (
-                      <nav className="shrink-0 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-6 py-4 flex justify-between items-center z-20 no-print">
-                          <div><div className="text-3xl font-display font-bold tracking-tight leading-none"><span className="text-white">Boarding</span><span className="text-blue-600">Gate</span></div><div className="text-sm font-bold tracking-widest"><span className="text-white">Licitaciones</span><span className="text-green-600">Pro</span></div></div>
-                          <div className="flex bg-slate-800 rounded-lg p-1 gap-1">
-                              <button onClick={()=>setView('dashboard')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='dashboard'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Briefcase size={16}/> Licitaciones</button>
-                              <button onClick={()=>setView('companies')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='companies'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Building size={16}/> Empresas</button>
-                              <button onClick={()=>setView('settings')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='settings'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Settings size={16}/> Config</button>
-                          </div>
-                      </nav>
-                  )}
-                  <div className="flex-1 overflow-hidden relative">
-                      {view === 'dashboard' && <Dashboard tenders={tenders} setTenders={setTenders} onOpenTender={handleOpenTender} showPrompt={showPrompt} />}
-                      {view === 'companies' && <CompanyManager companies={companies} setCompanies={setCompanies} showModal={showModal} />}
-                      {view === 'workspace' && activeTender && <Workspace tender={activeTender} onBack={()=>setView('dashboard')} apiKey={apiKey} companies={companies} showModal={showModal} />}
-                      {view === 'settings' && <SettingsTab isAuth={isAuth} trialCount={tc} onActivate={handleActivate} />}
-                  </div>
-                  <Modal isOpen={modal.open} title={modal.title} message={modal.message} type={modal.type} onClose={() => setModal({ ...modal, open: false })} onConfirm={modal.onConfirm ? () => { modal.onConfirm(); setModal({ ...modal, open: false }); } : null}/>
-                  <PromptModal isOpen={promptModal.open} title={promptModal.title} message={promptModal.message} placeholder={promptModal.placeholder} onClose={() => setPromptModal({ ...promptModal, open: false })} onConfirm={(val) => { promptModal.onConfirm(val); setPromptModal({ ...promptModal, open: false }); }}/>
               </div>
           );
       };
