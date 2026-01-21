@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>BoardingGate - LicitacionesPro v2.1</title>
+    <title>BoardingGate - LicitacionesPro v2.2</title>
     
     <!-- Librerías Externas -->
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
@@ -110,7 +110,8 @@
         Sparkles: (p) => <IconBase {...p}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></IconBase>,
         Send: (p) => <IconBase {...p}><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></IconBase>,
         Link: (p) => <IconBase {...p}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></IconBase>,
-        Minus: (p) => <IconBase {...p}><line x1="5" y1="12" x2="19" y2="12"/></IconBase>
+        Minus: (p) => <IconBase {...p}><line x1="5" y1="12" x2="19" y2="12"/></IconBase>,
+        ArrowLeft: (p) => <IconBase {...p}><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></IconBase>
       };
 
       const CopyBtn = ({ text, className }) => {
@@ -751,6 +752,72 @@
               finally { setPdfProcessing(false); }
           };
 
+          const handleAddDocUrl = () => {
+            showPrompt('Añadir URL para Análisis', 'Introduce la URL (Web o PDF). El sistema intentará extraer el texto para la IA:', 'https://...', async (url) => {
+                if (!url) return;
+                setPdfProcessing(true); // Reuse the spinner
+                try {
+                    // Proxy to bypass CORS
+                    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+                    const response = await fetch(proxyUrl);
+                    if (!response.ok) throw new Error("Error descargando URL");
+
+                    const contentType = response.headers.get('content-type') || "";
+                    let extractedText = "";
+                    let typeLabel = "Web";
+
+                    if (contentType.includes('application/pdf') || url.toLowerCase().endsWith('.pdf')) {
+                        typeLabel = "PDF Remoto";
+                        const blob = await response.blob();
+                        const buff = await blob.arrayBuffer();
+                        const pdf = await pdfjsLib.getDocument(buff).promise;
+                        for (let i = 1; i <= Math.min(pdf.numPages, 50); i++) {
+                            const page = await pdf.getPage(i);
+                            const tc = await page.getTextContent();
+                            extractedText += tc.items.map(item => item.str).join(' ') + "\n";
+                        }
+                    } else {
+                        // HTML/Text
+                        const text = await response.text();
+                        const doc = new DOMParser().parseFromString(text, 'text/html');
+                        // Remove scripts/styles
+                        const scripts = doc.querySelectorAll('script, style');
+                        scripts.forEach(s => s.remove());
+                        extractedText = doc.body.innerText || "";
+                    }
+
+                    if (!extractedText || extractedText.trim().length < 50) throw new Error("Texto insuficiente");
+
+                    const fileId = `doc_url_${Date.now()}`;
+                    const newFile = { id: fileId, name: `[IA] ${typeLabel}: ${url}`, type: 'url', url: url };
+                    
+                    const newRawText = (localTender.rawText || "") + `\n\n--- CONTENIDO URL: ${url} ---\n${extractedText}\n--- FIN URL ---\n`;
+                    
+                    const updatedFiles = [...localTender.files, newFile];
+
+                    setLocalTender(prev => ({
+                        ...prev,
+                        files: updatedFiles,
+                        rawText: newRawText
+                    }));
+                    await dbActions.put(DB_STORES.TENDERS, null, { ...localTender, files: updatedFiles, rawText: newRawText });
+                    showModal('Éxito', 'Contenido extraído y añadido al análisis.', 'success');
+
+                } catch (e) {
+                    console.error(e);
+                    // Fallback to just adding the link
+                    const fileId = `doc_url_${Date.now()}`;
+                    const newFile = { id: fileId, name: "Enlace (No leído): " + url, type: 'url', url: url };
+                    const updatedFiles = [...localTender.files, newFile];
+                    setLocalTender(prev => ({ ...prev, files: updatedFiles }));
+                    await dbActions.put(DB_STORES.TENDERS, null, { ...localTender, files: updatedFiles });
+                    showModal('Aviso', 'Se añadió el enlace pero no se pudo extraer el texto (bloqueo CORS o formato). La IA no leerá esto.', 'warning');
+                } finally {
+                    setPdfProcessing(false);
+                }
+            });
+          };
+
           const handleEnvelopeItem = async (e, envelopeType, type) => {
               if (type === 'url') {
                   showPrompt('Añadir Enlace Externo', 'Pega aquí el enlace al documento:', 'https://...', (url) => {
@@ -783,14 +850,15 @@
 
           const handleDeleteFile = async (idx) => {
               const f = localTender.files[idx];
-              await dbActions.del(DB_STORES.FILES, f.id);
+              if(f.type !== 'url') await dbActions.del(DB_STORES.FILES, f.id);
               const newFiles = [...localTender.files];
               newFiles.splice(idx, 1);
               setLocalTender({...localTender, files: newFiles});
+              await dbActions.put(DB_STORES.TENDERS, null, { ...localTender, files: newFiles });
           };
 
           const runAnalysis = async () => {
-              if(!localTender.rawText) { showModal('Aviso', 'Sube documentos (PCAP) primero.', 'warning'); return; }
+              if(!localTender.rawText || localTender.rawText.trim().length === 0) { showModal('Aviso', 'No hay contenido para analizar. Sube documentos PDF o añade URLs accesibles.', 'warning'); return; }
               if(!apiKey) { showModal('Error', 'Configura la API Key primero en la pestaña Config.', 'danger'); return; }
               setIsAnalyzing(true);
               try {
@@ -1007,7 +1075,7 @@
               <div className="h-full flex flex-col bg-[#0a0a0a]">
                   <header className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center no-print">
                       <div className="flex items-center gap-4">
-                          <button onClick={onBack} className="text-slate-400 hover:text-white"><Icons.Briefcase size={20} className="rotate-90" /></button>
+                          <button onClick={onBack} className="flex items-center gap-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition-colors border border-slate-700"><Icons.ArrowLeft size={16}/> <span className="text-xs font-bold uppercase">Volver al Panel</span></button>
                           <div>
                               <h2 className="text-lg font-bold text-white truncate max-w-md">{localTender.title}</h2>
                               <div className="flex items-center gap-2 text-xs text-slate-400">
@@ -1030,20 +1098,29 @@
                               <div className="space-y-6 fade-in no-print">
                                   <div className="glass-panel p-8 rounded-2xl text-center border-dashed border-2 border-slate-700 hover:border-blue-500 transition-colors">
                                       <div className="mb-4 text-blue-500 flex justify-center"><Icons.Upload size={48} /></div>
-                                      <h3 className="text-xl font-bold text-white mb-2">Subir Pliegos (PDF)</h3>
-                                      <p className="text-slate-400 text-sm mb-6">Sube el PCAP y PPT. La IA leerá el texto para extraer los datos.</p>
-                                      <label className="btn-primary px-8 py-3 rounded-xl cursor-pointer shadow-lg inline-flex items-center gap-2">
-                                          {pdfProcessing ? <Icons.Loader/> : <Icons.Plus/>} Seleccionar Archivos
-                                          <input type="file" multiple accept="application/pdf" className="hidden" onChange={handlePdfUpload} disabled={pdfProcessing}/>
-                                      </label>
+                                      <h3 className="text-xl font-bold text-white mb-2">Subir Pliegos (PDF) o URLs</h3>
+                                      <p className="text-slate-400 text-sm mb-6">Sube el PCAP y PPT para que la IA los analice. Puedes añadir enlaces externos para consultarlos.</p>
+                                      <div className="flex justify-center gap-4">
+                                          <button onClick={handleAddDocUrl} className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-xl shadow-lg border border-slate-600 flex items-center gap-2 font-bold text-sm transition-colors"><Icons.Link size={18}/> Añadir Link Web</button>
+                                          <label className="btn-primary px-8 py-3 rounded-xl cursor-pointer shadow-lg inline-flex items-center gap-2 text-sm">
+                                              {pdfProcessing ? <Icons.Loader/> : <Icons.Plus/>} Subir Documentos PDF
+                                              <input type="file" multiple accept="application/pdf" className="hidden" onChange={handlePdfUpload} disabled={pdfProcessing}/>
+                                          </label>
+                                      </div>
                                   </div>
                                   {localTender.files.length > 0 && (
                                       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
                                           <div className="p-4 bg-slate-800/50 font-bold text-slate-300 text-sm">Archivos del Expediente</div>
                                           {localTender.files.map((f, i) => (
                                               <div key={i} className="p-4 border-b border-slate-800 flex justify-between items-center last:border-0">
-                                                  <div className="flex items-center gap-3"><div className="bg-red-900/20 text-red-400 p-2 rounded"><Icons.FileText size={18}/></div><span className="text-sm text-slate-200">{f.name}</span></div>
-                                                  <div className="flex gap-2"><button onClick={()=>handleOpenItem(f)} className="text-slate-500 hover:text-blue-400 p-2"><Icons.Download size={18}/></button><button onClick={()=>handleDeleteFile(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={18}/></button></div>
+                                                  <div className="flex items-center gap-3">
+                                                      <div className="bg-red-900/20 text-red-400 p-2 rounded">{f.type === 'url' ? <Icons.Link size={18} className="text-blue-400"/> : <Icons.FileText size={18}/>}</div>
+                                                      <span className="text-sm text-slate-200">{f.name}</span>
+                                                  </div>
+                                                  <div className="flex gap-2">
+                                                      <button onClick={()=>handleOpenItem(f)} className="text-slate-500 hover:text-blue-400 p-2" title={f.type==='url'?'Abrir Enlace':'Descargar'}><Icons.ExternalLink size={18}/></button>
+                                                      <button onClick={()=>handleDeleteFile(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={18}/></button>
+                                                  </div>
                                               </div>
                                           ))}
                                           <div className="p-4 bg-slate-800/30 flex justify-end"><button onClick={runAnalysis} disabled={isAnalyzing} className="btn-primary px-6 py-2 rounded-lg flex items-center gap-2 text-sm shadow-lg shadow-blue-900/30">{isAnalyzing ? <Icons.Loader/> : <Icons.BrainCircuit/>} {isAnalyzing ? 'Analizando Pliego...' : 'EJECUTAR ANÁLISIS IA'}</button></div>
