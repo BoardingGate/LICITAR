@@ -752,69 +752,77 @@
           };
 
           const handleAddDocUrl = () => {
-            showPrompt('Añadir URL para Análisis', 'Introduce la URL (Web o PDF). El sistema intentará extraer el texto para la IA:', 'https://...', async (url) => {
-                if (!url) return;
-                setPdfProcessing(true); // Reuse the spinner
-                try {
-                    // Proxy to bypass CORS
-                    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-                    const response = await fetch(proxyUrl);
-                    if (!response.ok) throw new Error("Error descargando URL");
+              showPrompt('Añadir URL para Análisis', 'Introduce la URL (Web o PDF). El sistema intentará extraer el texto:', 'https://...', async (url) => {
+                  if (!url) return;
+                  setPdfProcessing(true);
+                  try {
+                      let extractedText = "";
+                      let typeLabel = "Web";
 
-                    const contentType = response.headers.get('content-type') || "";
-                    let extractedText = "";
-                    let typeLabel = "Web";
+                      // ESTRATEGIA 1: Si parece un PDF, intentamos descargarlo como binario
+                      if (url.toLowerCase().endsWith('.pdf')) {
+                          typeLabel = "PDF Remoto";
+                          // Usamos corsproxy.io que maneja mejor los binarios
+                          const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
+                          const response = await fetch(proxyUrl);
+                          if (!response.ok) throw new Error("No se pudo descargar el PDF (Bloqueo CORS)");
+                          
+                          const blob = await response.blob();
+                          const buff = await blob.arrayBuffer();
+                          const pdf = await pdfjsLib.getDocument(buff).promise;
+                          
+                          for (let i = 1; i <= Math.min(pdf.numPages, 50); i++) {
+                              const page = await pdf.getPage(i);
+                              const tc = await page.getTextContent();
+                              extractedText += tc.items.map(item => item.str).join(' ') + "\n";
+                          }
+                      } 
+                      // ESTRATEGIA 2: Si es una WEB, usamos el Lector de IA (Jina)
+                      else {
+                          // Jina.ai convierte webs a texto markdown limpio y salta muchos bloqueos
+                          const response = await fetch('https://r.jina.ai/' + url);
+                          if (!response.ok) throw new Error("Error leyendo la web");
+                          extractedText = await response.text();
+                          
+                          // Limpieza básica por si devuelve error en texto
+                          if(extractedText.includes("Jina Reader") && extractedText.length < 200) {
+                              throw new Error("La web bloqueó el acceso al lector.");
+                          }
+                      }
 
-                    if (contentType.includes('application/pdf') || url.toLowerCase().endsWith('.pdf')) {
-                        typeLabel = "PDF Remoto";
-                        const blob = await response.blob();
-                        const buff = await blob.arrayBuffer();
-                        const pdf = await pdfjsLib.getDocument(buff).promise;
-                        for (let i = 1; i <= Math.min(pdf.numPages, 50); i++) {
-                            const page = await pdf.getPage(i);
-                            const tc = await page.getTextContent();
-                            extractedText += tc.items.map(item => item.str).join(' ') + "\n";
-                        }
-                    } else {
-                        // HTML/Text
-                        const text = await response.text();
-                        const doc = new DOMParser().parseFromString(text, 'text/html');
-                        // Remove scripts/styles
-                        const scripts = doc.querySelectorAll('script, style');
-                        scripts.forEach(s => s.remove());
-                        extractedText = doc.body.innerText || "";
-                    }
+                      if (!extractedText || extractedText.trim().length < 50) throw new Error("Texto insuficiente extraído.");
 
-                    if (!extractedText || extractedText.trim().length < 50) throw new Error("Texto insuficiente");
+                      const fileId = `doc_url_${Date.now()}`;
+                      // Guardamos el archivo como tipo URL pero con contenido
+                      const newFile = { id: fileId, name: `[IA] ${typeLabel}: ${url}`, type: 'url', url: url };
+                      
+                      const newRawText = (localTender.rawText || "") + `\n\n--- CONTENIDO EXTRAÍDO DE: ${url} ---\n${extractedText}\n--- FIN URL ---\n`;
+                      const updatedFiles = [...localTender.files, newFile];
 
-                    const fileId = `doc_url_${Date.now()}`;
-                    const newFile = { id: fileId, name: `[IA] ${typeLabel}: ${url}`, type: 'url', url: url };
-                    
-                    const newRawText = (localTender.rawText || "") + `\n\n--- CONTENIDO URL: ${url} ---\n${extractedText}\n--- FIN URL ---\n`;
-                    
-                    const updatedFiles = [...localTender.files, newFile];
+                      setLocalTender(prev => ({
+                          ...prev,
+                          files: updatedFiles,
+                          rawText: newRawText
+                      }));
+                      
+                      await dbActions.put(DB_STORES.TENDERS, null, { ...localTender, files: updatedFiles, rawText: newRawText });
+                      showModal('Éxito', 'Contenido extraído correctamente. Ya puedes usar "Ejecutar Análisis".', 'success');
 
-                    setLocalTender(prev => ({
-                        ...prev,
-                        files: updatedFiles,
-                        rawText: newRawText
-                    }));
-                    await dbActions.put(DB_STORES.TENDERS, null, { ...localTender, files: updatedFiles, rawText: newRawText });
-                    showModal('Éxito', 'Contenido extraído y añadido al análisis.', 'success');
-
-                } catch (e) {
-                    console.error(e);
-                    // Fallback to just adding the link
-                    const fileId = `doc_url_${Date.now()}`;
-                    const newFile = { id: fileId, name: "Enlace (No leído): " + url, type: 'url', url: url };
-                    const updatedFiles = [...localTender.files, newFile];
-                    setLocalTender(prev => ({ ...prev, files: updatedFiles }));
-                    await dbActions.put(DB_STORES.TENDERS, null, { ...localTender, files: updatedFiles });
-                    showModal('Aviso', 'Se añadió el enlace pero no se pudo extraer el texto (bloqueo CORS o formato). La IA no leerá esto.', 'warning');
-                } finally {
-                    setPdfProcessing(false);
-                }
-            });
+                  } catch (e) {
+                      console.error(e);
+                      // Fallback: Añadir solo el link sin texto
+                      const fileId = `doc_url_${Date.now()}`;
+                      const newFile = { id: fileId, name: "Enlace (Solo referencia): " + url, type: 'url', url: url };
+                      const updatedFiles = [...localTender.files, newFile];
+                      
+                      setLocalTender(prev => ({ ...prev, files: updatedFiles }));
+                      await dbActions.put(DB_STORES.TENDERS, null, { ...localTender, files: updatedFiles });
+                      
+                      showModal('Lectura Parcial', `Se añadió el enlace, pero NO se pudo leer el texto debido a la seguridad de la página (Error: ${e.message}).\n\nConsejo: Imprime la página como PDF y súbela manualmente.`, 'warning');
+                  } finally {
+                      setPdfProcessing(false);
+                  }
+              });
           };
 
           const handleEnvelopeItem = async (e, envelopeType, type) => {
@@ -1111,14 +1119,14 @@
                                       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
                                           <div className="p-4 bg-slate-800/50 font-bold text-slate-300 text-sm">Archivos del Expediente</div>
                                           {localTender.files.map((f, i) => (
-                                              <div key={i} className="p-4 border-b border-slate-800 flex justify-between items-center last:border-0">
-                                                  <div className="flex items-center gap-3">
-                                                      <div className="bg-red-900/20 text-red-400 p-2 rounded">{f.type === 'url' ? <Icons.Link size={18} className="text-blue-400"/> : <Icons.FileText size={18}/>}</div>
-                                                      <span className="text-sm text-slate-200">{f.name}</span>
+                                              <div key={i} className="p-4 border-b border-slate-800 flex justify-between items-center last:border-0 gap-4">
+                                                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                      <div className="bg-red-900/20 text-red-400 p-2 rounded shrink-0">{f.type === 'url' ? <Icons.Link size={18} className="text-blue-400"/> : <Icons.FileText size={18}/>}</div>
+                                                      <span className="text-sm text-slate-200 truncate" title={f.name}>{f.name}</span>
                                                   </div>
-                                                  <div className="flex gap-2">
+                                                  <div className="flex gap-2 shrink-0">
                                                       <button onClick={()=>handleOpenItem(f)} className="text-slate-500 hover:text-blue-400 p-2" title={f.type==='url'?'Abrir Enlace':'Descargar'}><Icons.ExternalLink size={18}/></button>
-                                                      <button onClick={()=>handleDeleteFile(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={18}/></button>
+                                                      <button onClick={()=>handleDeleteFile(i)} className="text-slate-500 hover:text-red-400 p-2" title="Eliminar archivo"><Icons.Trash2 size={18}/></button>
                                                   </div>
                                               </div>
                                           ))}
