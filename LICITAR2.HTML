@@ -3,18 +3,27 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>BoardingGate - LicitacionesPro v2.2</title>
+    <title>BoardingGate - LicitacionesPro v2.3</title>
     
-    <!-- Librerías Externas -->
+    <!-- Librerías Externas con crossorigin para depuración correcta -->
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <script>eruda.init();</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+    
+    <!-- React y Babel -->
+    <script crossorigin="anonymous" src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- PDF.js -->
+    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        // Configuración del Worker de PDF.js
+        if (window.pdfjsLib) {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+    </script>
     
     <style>
       html, body { margin: 0; padding: 0; width: 100%; height: 100dvh; overflow: hidden; background-color: #0a0a0a; font-family: 'Inter', sans-serif; color: #e5e5e5; }
@@ -731,7 +740,11 @@
               setPdfProcessing(true);
               try {
                   const buf = await file.arrayBuffer();
-                  const pdf = await pdfjsLib.getDocument(buf).promise;
+                  // Usar window.pdfjsLib por seguridad
+                  const lib = window.pdfjsLib || pdfjsLib;
+                  if(!lib) throw new Error("Librería PDF no cargada");
+                  
+                  const pdf = await lib.getDocument(buf).promise;
                   let fullText = "";
                   for (let i = 1; i <= Math.min(pdf.numPages, 100); i++) {
                       const page = await pdf.getPage(i);
@@ -747,7 +760,7 @@
                       files: [...prev.files, { id: fileId, name: file.name }],
                       rawText: (prev.rawText || "") + fullText
                   }));
-              } catch (err) { console.error(err); showModal('Error', 'No se pudo leer el PDF.', 'danger'); }
+              } catch (err) { console.error(err); showModal('Error', 'No se pudo leer el PDF: ' + err.message, 'danger'); }
               finally { setPdfProcessing(false); }
           };
 
@@ -756,10 +769,10 @@
                 if (!url) return;
                 setPdfProcessing(true); 
                 try {
-                    // Usamos corsproxy.io que es más robusto para binarios y texto crudo
-                    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
+                    // Usamos api.allorigins.win que es más estándar y menos bloqueado que corsproxy
+                    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
                     const response = await fetch(proxyUrl);
-                    if (!response.ok) throw new Error("Error descargando URL");
+                    if (!response.ok) throw new Error("Error de red al descargar URL");
 
                     const contentType = response.headers.get('content-type') || "";
                     let extractedText = "";
@@ -769,9 +782,13 @@
                         typeLabel = "PDF Remoto";
                         const blob = await response.blob();
                         const buff = await blob.arrayBuffer();
-                        // Importante: Convertir a Uint8Array para que PDF.js lo procese bien
+                        // Importante: Convertir a Uint8Array
                         const typedArray = new Uint8Array(buff);
-                        const pdf = await pdfjsLib.getDocument(typedArray).promise;
+                        
+                        const lib = window.pdfjsLib || pdfjsLib;
+                        if(!lib) throw new Error("Librería PDF no inicializada");
+
+                        const pdf = await lib.getDocument(typedArray).promise;
                         for (let i = 1; i <= Math.min(pdf.numPages, 50); i++) {
                             const page = await pdf.getPage(i);
                             const tc = await page.getTextContent();
@@ -781,13 +798,12 @@
                         // HTML/Text
                         const text = await response.text();
                         const doc = new DOMParser().parseFromString(text, 'text/html');
-                        // Eliminar scripts y estilos que ensucian el texto
                         const scripts = doc.querySelectorAll('script, style, noscript');
                         scripts.forEach(s => s.remove());
                         extractedText = doc.body.innerText || "";
                     }
 
-                    if (!extractedText || extractedText.trim().length < 50) throw new Error("Texto insuficiente o ilegible");
+                    if (!extractedText || extractedText.trim().length < 50) throw new Error("Texto extraído insuficiente o ilegible.");
 
                     const fileId = `doc_url_${Date.now()}`;
                     const newFile = { id: fileId, name: `[IA] ${typeLabel}: ${url}`, type: 'url', url: url };
@@ -806,13 +822,13 @@
 
                 } catch (e) {
                     console.error(e);
-                    // Fallback: añadir el link sin texto
+                    // Fallback
                     const fileId = `doc_url_${Date.now()}`;
-                    const newFile = { id: fileId, name: "Enlace (No leído): " + url, type: 'url', url: url };
+                    const newFile = { id: fileId, name: "Link (Sin Texto): " + url, type: 'url', url: url };
                     const updatedFiles = [...localTender.files, newFile];
                     setLocalTender(prev => ({ ...prev, files: updatedFiles }));
                     await dbActions.put(DB_STORES.TENDERS, null, { ...localTender, files: updatedFiles });
-                    showModal('Aviso', 'Se añadió el enlace pero no se pudo extraer el texto (bloqueo seguridad o formato). La IA no leerá esto.', 'warning');
+                    showModal('Aviso de Lectura', 'Se añadió el enlace, pero no se pudo extraer el texto (bloqueo de seguridad o formato).', 'warning');
                 } finally {
                     setPdfProcessing(false);
                 }
@@ -942,8 +958,8 @@
                   <div className="space-y-1">
                       {envelopeFiles[envType].map((f, idx) => (
                           <div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded">
-                              <span className="text-xs text-slate-300 flex items-center gap-2">{f.type === 'url' ? <Icons.Link size={12} className="text-blue-400"/> : <Icons.FileText size={12}/>} {f.name}</span>
-                              <div className="flex gap-2">
+                              <span className="text-xs text-slate-300 flex items-center gap-2 truncate min-w-0">{f.type === 'url' ? <Icons.Link size={12} className="text-blue-400 shrink-0"/> : <Icons.FileText size={12} className="shrink-0"/>} <span className="truncate">{f.name}</span></span>
+                              <div className="flex gap-2 shrink-0">
                                   <button onClick={()=>handleOpenItem(f)} className="text-blue-400 hover:text-white" title={f.type==='url'?'Abrir URL':'Descargar'}>{f.type === 'url' ? <Icons.ExternalLink size={14}/> : <Icons.Download size={14}/>}</button>
                                   <button onClick={()=>deleteEnvelopeFile(envType, idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button>
                               </div>
