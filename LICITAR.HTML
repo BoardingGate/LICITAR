@@ -4,11 +4,13 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>BoardingGate - LicitacionesPro v2.8</title>
+    <title>BoardingGate - LicitacionesPro v2.9</title>
     
-    <!-- Librerías Externas -->
+    <!-- Eruda (Depuración Móvil/Web) -->
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <script>eruda.init();</script>
+
+    <!-- Estilos y Fuentes -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
     
@@ -17,8 +19,12 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- PDF.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- PDF.js (Versión ES5 compatible para evitar problemas de sintaxis en worker) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        // Configuración Global del Worker de PDF.js fuera del ciclo de React
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    </script>
     
     <style>
       html, body { margin: 0; padding: 0; width: 100%; height: 100dvh; overflow: hidden; background-color: #0a0a0a; font-family: 'Inter', sans-serif; color: #e5e5e5; }
@@ -54,20 +60,12 @@
 <body>
     <div id="root"></div>
 
-    <script type="text/babel">
+    <script type="text/babel" data-presets="react,stage-3">
       const { useState, useEffect, useMemo, useRef } = React;
       const { createRoot } = ReactDOM;
 
-      // --- SETUP PDF.JS SAFELY ---
-      const setupPdfWorker = () => {
-          if (window.pdfjsLib && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
-              window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-          }
-      };
-
       // --- LOGIC: HELPER PARA SCRAPING ---
       const fetchUrlContent = async (targetUrl) => {
-          setupPdfWorker(); // Ensure worker is ready
           const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(targetUrl);
           const res = await fetch(proxyUrl);
           if (!res.ok) throw new Error(`Status ${res.status}`);
@@ -99,6 +97,7 @@
               }
           }
           
+          // Si es HTML
           const text = await res.text();
           const doc = new DOMParser().parseFromString(text, 'text/html');
           const cleanText = doc.body.innerText.replace(/\s+/g, ' ').trim();
@@ -1126,14 +1125,14 @@
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-20 custom-scrollbar">
                           {tenders.map(t => (
                               <div key={t.id} onClick={()=>onOpenTender(t)} className="glass-panel p-6 rounded-2xl cursor-pointer hover:bg-slate-800/80 transition-all hover:scale-[1.01] group border-l-4 border-l-transparent hover:border-l-blue-500 relative">
-                                  <div className="absolute top-4 right-4 z-10 flex gap-2">
-                                      <button onClick={(e) => handleRenameTender(e, t)} className="p-2 bg-slate-900/80 hover:bg-slate-700 text-slate-500 hover:text-white rounded-lg border border-slate-700" title="Renombrar"><Icons.Edit size={16}/></button>
-                                      <button onClick={(e) => handleDeleteTender(e, t)} className="p-2 bg-slate-900/80 hover:bg-red-900/50 text-slate-500 hover:text-red-400 rounded-lg border border-slate-700" title="Eliminar"><Icons.Trash2 size={16}/></button>
+                                  <div className="absolute top-4 right-4 z-20 flex gap-2">
+                                      <button onClick={(e) => handleRenameTender(e, t)} className="p-2 bg-slate-900/80 hover:bg-slate-700 text-slate-500 hover:text-white rounded-lg border border-slate-700 transition-colors" title="Renombrar"><Icons.Edit size={16}/></button>
+                                      <button onClick={(e) => handleDeleteTender(e, t)} className="p-2 bg-slate-900/80 hover:bg-red-900/50 text-slate-500 hover:text-red-400 rounded-lg border border-slate-700 transition-colors" title="Eliminar"><Icons.Trash2 size={16}/></button>
                                   </div>
                                   <div className="flex justify-between items-start mb-4">
                                       <div className="bg-slate-800 p-2 rounded text-slate-300 group-hover:text-blue-400 transition-colors"><Icons.Briefcase/></div>
                                   </div>
-                                  <h3 className="text-lg font-bold text-white mb-2 line-clamp-2 pr-16">{t.title}</h3>
+                                  <h3 className="text-lg font-bold text-white mb-2 line-clamp-2 pr-20">{t.title}</h3>
                                   <div className="mb-4" onClick={e => e.stopPropagation()}>
                                       <select value={t.status || 'Nueva'} onChange={(e) => handleStatusChange(e, t, e.target.value)} className={`text-[10px] px-2 py-1 rounded font-bold uppercase outline-none border-none cursor-pointer ${t.status==='Adjudicada' ? 'bg-green-900/30 text-green-300' : t.status==='Descartada' ? 'bg-red-900/30 text-red-300' : 'bg-blue-900/30 text-blue-300'}`}>
                                           <option value="Estudio">En Estudio</option>
