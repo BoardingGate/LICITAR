@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>BoardingGate - LicitacionesPro v2.6 (Robust)</title>
+    <title>BoardingGate - LicitacionesPro v2.6</title>
     
     <!-- Librerías Externas -->
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
@@ -764,51 +765,69 @@
           };
 
           const handleAddDocUrl = () => {
-            showPrompt('Añadir URL para Análisis', 'Introduce la URL (Web o PDF). El sistema intentará extraer el texto para la IA:', 'https://...', async (url) => {
+            showPrompt('Añadir URL para Análisis', 'Introduce la URL (Web o PDF). Intentaremos leer el contenido:', 'https://...', async (url) => {
                 if (!url) return;
                 setPdfProcessing(true); 
                 try {
+                    // Proxies en cascada (Si uno falla, prueba el siguiente)
+                    const proxyOptions = [
+                        (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`, 
+                        (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+                        (u) => `https://thingproxy.freeboard.io/fetch/${u}`
+                    ];
+
+                    let response = null;
+                    let lastError = null;
+
+                    for (const proxyGen of proxyOptions) {
+                        try {
+                            const proxyUrl = proxyGen(url);
+                            console.log("Probando proxy:", proxyUrl);
+                            const res = await fetch(proxyUrl);
+                            if (res.ok) {
+                                response = res;
+                                break;
+                            }
+                        } catch (e) {
+                            console.warn("Fallo proxy", e);
+                            lastError = e;
+                        }
+                    }
+
+                    if (!response) throw new Error("No se pudo acceder a la URL desde ningún proxy. Posible bloqueo de seguridad.");
+
+                    const contentType = response.headers.get('content-type') || "";
+                    const blob = await response.blob();
                     let extractedText = "";
                     let typeLabel = "Web";
-                    
-                    // INTENTO 1: corsproxy.io (Mejor para PDFs binarios)
-                    try {
-                        const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
-                        const response = await fetch(proxyUrl);
-                        if (!response.ok) throw new Error("Status " + response.status);
-                        
-                        const contentType = response.headers.get('content-type') || "";
-                        if (contentType.includes('application/pdf') || url.toLowerCase().endsWith('.pdf')) {
-                            typeLabel = "PDF Remoto";
-                            const blob = await response.blob();
-                            const buff = await blob.arrayBuffer();
-                            const typedArray = new Uint8Array(buff);
-                            const lib = window.pdfjsLib || pdfjsLib;
-                            const pdf = await lib.getDocument(typedArray).promise;
-                            for (let i = 1; i <= Math.min(pdf.numPages, 50); i++) {
-                                const page = await pdf.getPage(i);
-                                const tc = await page.getTextContent();
-                                extractedText += tc.items.map(item => item.str).join(' ') + "\n";
-                            }
-                        } else {
-                            throw new Error("Not a PDF, trying text scraper...");
+
+                    // Detección de PDF (por Header o Magic Bytes)
+                    const buff = await blob.arrayBuffer();
+                    const uint8 = new Uint8Array(buff);
+                    const isPdf = contentType.includes('pdf') || url.toLowerCase().endsWith('.pdf') || (uint8[0] === 0x25 && uint8[1] === 0x50 && uint8[2] === 0x44 && uint8[3] === 0x46); // %PDF header
+
+                    if (isPdf) {
+                        typeLabel = "PDF Remoto";
+                        const lib = window.pdfjsLib || pdfjsLib;
+                        if(!lib) throw new Error("Librería PDF no inicializada");
+
+                        const pdf = await lib.getDocument(uint8).promise;
+                        for (let i = 1; i <= Math.min(pdf.numPages, 50); i++) {
+                            const page = await pdf.getPage(i);
+                            const tc = await page.getTextContent();
+                            extractedText += tc.items.map(item => item.str).join(' ') + "\n";
                         }
-                    } catch (err1) {
-                        console.log("Intento 1 fallido, probando backup...", err1);
-                        // INTENTO 2: allorigins.win (Mejor para texto plano / HTML)
-                        const proxyUrl2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-                        const response2 = await fetch(proxyUrl2);
-                        if (!response2.ok) throw new Error("Fallo definitivo de lectura.");
-                        
-                        const text = await response2.text();
-                        // Limpieza agresiva de HTML
+                    } else {
+                        // HTML/Text cleaning
+                        const text = new TextDecoder().decode(uint8);
                         const doc = new DOMParser().parseFromString(text, 'text/html');
-                        // Extraer solo párrafos y divs para evitar menús y scripts
-                        const contentNodes = doc.querySelectorAll('p, div, article, main, section');
-                        contentNodes.forEach(node => {
-                             if(node.innerText.length > 20) extractedText += node.innerText + "\n";
-                        });
-                        if(extractedText.length < 50) extractedText = doc.body.innerText; // Fallback body completo
+                        
+                        // Eliminar basura
+                        const trash = doc.querySelectorAll('script, style, noscript, svg, header, footer, nav, iframe');
+                        trash.forEach(t => t.remove());
+                        
+                        extractedText = doc.body.innerText || "";
+                        extractedText = extractedText.replace(/\s+/g, ' ').trim(); // Normalizar espacios
                     }
 
                     if (!extractedText || extractedText.trim().length < 50) throw new Error("Texto extraído insuficiente o ilegible.");
@@ -826,16 +845,17 @@
                         rawText: newRawText
                     }));
                     await dbActions.put(DB_STORES.TENDERS, null, { ...localTender, files: updatedFiles, rawText: newRawText });
-                    showModal('Éxito', 'Contenido extraído y añadido al análisis.', 'success');
+                    showModal('Lectura Exitosa', 'Contenido descargado y añadido al análisis de la IA.', 'success');
 
                 } catch (e) {
                     console.error(e);
+                    // Fallback solo link
                     const fileId = `doc_url_${Date.now()}`;
                     const newFile = { id: fileId, name: "Link (Sin Texto): " + url, type: 'url', url: url };
                     const updatedFiles = [...localTender.files, newFile];
                     setLocalTender(prev => ({ ...prev, files: updatedFiles }));
                     await dbActions.put(DB_STORES.TENDERS, null, { ...localTender, files: updatedFiles });
-                    showModal('Aviso de Lectura', 'Se añadió el enlace, pero no se pudo extraer texto. Asegúrate de que es un enlace directo a un archivo (.pdf) y no un visor (Google Drive/Dropbox).', 'warning');
+                    showModal('Aviso de Lectura', 'Se añadió el enlace pero no se pudo leer el texto (web bloqueada o formato no compatible). Intenta descargar el archivo y subirlo manualmente.', 'warning');
                 } finally {
                     setPdfProcessing(false);
                 }
@@ -965,14 +985,12 @@
                   <div className="space-y-1">
                       {envelopeFiles[envType].map((f, idx) => (
                           <div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded">
-                              {/* Left side: Buttons + Name */}
-                              <div className="flex items-center gap-3 overflow-hidden flex-1">
-                                  <div className="flex gap-2 shrink-0">
-                                      <button onClick={()=>handleOpenItem(f)} className="text-blue-400 hover:text-white bg-slate-800 p-1 rounded" title={f.type==='url'?'Abrir URL':'Descargar'}>{f.type === 'url' ? <Icons.ExternalLink size={14}/> : <Icons.Download size={14}/>}</button>
-                                      <button onClick={()=>deleteEnvelopeFile(envType, idx)} className="text-red-400 hover:text-red-300 bg-slate-800 p-1 rounded"><Icons.Trash2 size={14}/></button>
-                                  </div>
-                                  <span className="text-xs text-slate-300 flex items-center gap-2 truncate min-w-0">{f.type === 'url' ? <Icons.Link size={12} className="text-blue-400 shrink-0"/> : <Icons.FileText size={12} className="shrink-0"/>} <span className="truncate">{f.name}</span></span>
+                              {/* CORRECCIÓN: Botones a la izquierda para evitar que se oculten */}
+                              <div className="flex gap-2 shrink-0 mr-3">
+                                  <button onClick={()=>handleOpenItem(f)} className="text-blue-400 hover:text-white" title={f.type==='url'?'Abrir URL':'Descargar'}>{f.type === 'url' ? <Icons.ExternalLink size={14}/> : <Icons.Download size={14}/>}</button>
+                                  <button onClick={()=>deleteEnvelopeFile(envType, idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button>
                               </div>
+                              <span className="text-xs text-slate-300 flex items-center gap-2 truncate min-w-0 flex-1">{f.type === 'url' ? <Icons.Link size={12} className="text-blue-400 shrink-0"/> : <Icons.FileText size={12} className="shrink-0"/>} <span className="truncate">{f.name}</span></span>
                           </div>
                       ))}
                   </div>
@@ -1128,12 +1146,13 @@
                                           <div className="p-4 bg-slate-800/50 font-bold text-slate-300 text-sm">Archivos del Expediente</div>
                                           {localTender.files.map((f, i) => (
                                               <div key={i} className="p-4 border-b border-slate-800 flex justify-between items-center last:border-0">
-                                                  {/* MOVIDO BOTONES A LA IZQUIERDA */}
-                                                  <div className="flex items-center gap-3 overflow-hidden flex-1">
-                                                      <div className="flex gap-2 shrink-0">
-                                                          <button onClick={()=>handleOpenItem(f)} className="text-blue-400 hover:text-white bg-slate-800 p-2 rounded" title={f.type==='url'?'Abrir Enlace':'Descargar'}><Icons.ExternalLink size={18}/></button>
-                                                          <button onClick={()=>handleDeleteFile(i)} className="text-red-400 hover:text-red-300 bg-slate-800 p-2 rounded"><Icons.Trash2 size={18}/></button>
-                                                      </div>
+                                                  {/* CORRECCIÓN: Botones a la izquierda */}
+                                                  <div className="flex gap-2 shrink-0 mr-4">
+                                                      <button onClick={()=>handleOpenItem(f)} className="text-slate-500 hover:text-blue-400 p-2" title={f.type==='url'?'Abrir Enlace':'Descargar'}><Icons.ExternalLink size={18}/></button>
+                                                      <button onClick={()=>handleDeleteFile(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={18}/></button>
+                                                  </div>
+                                                  
+                                                  <div className="flex items-center gap-3 overflow-hidden">
                                                       <div className="bg-red-900/20 text-red-400 p-2 rounded shrink-0">{f.type === 'url' ? <Icons.Link size={18} className="text-blue-400"/> : <Icons.FileText size={18}/>}</div>
                                                       <span className="text-sm text-slate-200 truncate">{f.name}</span>
                                                   </div>
@@ -1241,11 +1260,19 @@
                           )}
                           {activeTab === 5 && renderBidAssistant()}
                       </div>
+                      
+                      {/* SECCIÓN PRINT-ONLY GLOBAL PARA WORKSPACE */}
                       <div className="print-only hidden p-8 bg-white text-black">
                          <h1 className="text-2xl font-bold mb-4">Resumen Técnico: {localTender.title}</h1>
                          <div className="whitespace-pre-wrap font-mono text-sm border-b pb-4 mb-4">{generateReportText(localTender.analysis)}</div>
                          {aiAdvice.economic && (<div className="mb-4"><h2 className="text-lg font-bold">Estrategia Económica</h2><p className="text-sm whitespace-pre-wrap">{aiAdvice.economic}</p></div>)}
                          <div className="mb-4"><strong>Oferta Final:</strong> {formatCurrency(precioOfertado)} (Baja: {baja.toFixed(2)}%)</div>
+                         <h3 className="font-bold mt-4">Documentación Adjunta (Checklist)</h3>
+                         <div className="grid grid-cols-3 gap-4 mt-2">
+                             <div><strong>Sobre A</strong><ul>{envelopeFiles.A.map(f=><li key={f.id}>[ ] {f.name}</li>)}</ul></div>
+                             <div><strong>Sobre B</strong><ul>{envelopeFiles.B.map(f=><li key={f.id}>[ ] {f.name}</li>)}</ul></div>
+                             <div><strong>Sobre C</strong><ul>{envelopeFiles.C.map(f=><li key={f.id}>[ ] {f.name}</li>)}</ul></div>
+                         </div>
                       </div>
                   </main>
               </div>
