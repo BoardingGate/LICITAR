@@ -1,9 +1,11 @@
+
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>BoardingGate - LicitacionesPro v2.6 (Fixed)</title>
+    <title>BoardingGate - LicitacionesPro v2.7 (Final Stable)</title>
     
     <!-- Librerías Externas -->
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
@@ -767,27 +769,20 @@
             showPrompt('Añadir URL para Análisis', 'Introduce la URL (Web o PDF). El sistema intentará extraer el texto para la IA:', 'https://...', async (url) => {
                 if (!url) return;
                 setPdfProcessing(true); 
-                try {
-                    // Usamos codetabs que es mejor para binarios (PDFs)
-                    const proxyUrl = 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url);
-                    const response = await fetch(proxyUrl);
-                    if (!response.ok) throw new Error("Error de red al descargar URL");
-
+                
+                // Función auxiliar para procesar el contenido descargado
+                const processContent = async (response, source) => {
                     const contentType = response.headers.get('content-type') || "";
                     let extractedText = "";
                     let typeLabel = "Web";
 
-                    // Detectar si es PDF por contentType o extensión
                     if (contentType.includes('application/pdf') || url.toLowerCase().endsWith('.pdf')) {
                         typeLabel = "PDF Remoto";
                         const blob = await response.blob();
                         const buff = await blob.arrayBuffer();
-                        // Importante: Convertir a Uint8Array
                         const typedArray = new Uint8Array(buff);
-                        
                         const lib = window.pdfjsLib || pdfjsLib;
                         if(!lib) throw new Error("Librería PDF no inicializada");
-
                         const pdf = await lib.getDocument(typedArray).promise;
                         for (let i = 1; i <= Math.min(pdf.numPages, 50); i++) {
                             const page = await pdf.getPage(i);
@@ -795,40 +790,58 @@
                             extractedText += tc.items.map(item => item.str).join(' ') + "\n";
                         }
                     } else {
-                        // HTML/Text
                         const text = await response.text();
                         const doc = new DOMParser().parseFromString(text, 'text/html');
                         const scripts = doc.querySelectorAll('script, style, noscript');
                         scripts.forEach(s => s.remove());
                         extractedText = doc.body.innerText || "";
                     }
+                    if (!extractedText || extractedText.trim().length < 50) throw new Error("Texto extraído insuficiente.");
+                    return { extractedText, typeLabel };
+                };
 
-                    if (!extractedText || extractedText.trim().length < 50) throw new Error("Texto extraído insuficiente o ilegible.");
-
-                    const fileId = `doc_url_${Date.now()}`;
-                    const newFile = { id: fileId, name: `[IA] ${typeLabel}: ${url}`, type: 'url', url: url };
-                    
-                    const newRawText = (localTender.rawText || "") + `\n\n--- CONTENIDO URL: ${url} ---\n${extractedText}\n--- FIN URL ---\n`;
-                    
-                    const updatedFiles = [...localTender.files, newFile];
-
-                    setLocalTender(prev => ({
-                        ...prev,
-                        files: updatedFiles,
-                        rawText: newRawText
-                    }));
-                    await dbActions.put(DB_STORES.TENDERS, null, { ...localTender, files: updatedFiles, rawText: newRawText });
-                    showModal('Éxito', 'Contenido extraído y añadido al análisis.', 'success');
-
+                try {
+                    // Intento 1: CodeTabs (Mejor para PDFs y binarios)
+                    try {
+                        const proxyUrl = 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url);
+                        const response = await fetch(proxyUrl);
+                        if (!response.ok) throw new Error("Falló CodeTabs");
+                        const result = await processContent(response, 'CodeTabs');
+                        
+                        // Guardar éxito
+                        const fileId = `doc_url_${Date.now()}`;
+                        const newFile = { id: fileId, name: `[IA] ${result.typeLabel}: ${url}`, type: 'url', url: url };
+                        const newRawText = (localTender.rawText || "") + `\n\n--- CONTENIDO URL: ${url} ---\n${result.extractedText}\n--- FIN URL ---\n`;
+                        const updatedFiles = [...localTender.files, newFile];
+                        setLocalTender(prev => ({ ...prev, files: updatedFiles, rawText: newRawText }));
+                        await dbActions.put(DB_STORES.TENDERS, null, { ...localTender, files: updatedFiles, rawText: newRawText });
+                        showModal('Éxito', 'Contenido extraído correctamente.', 'success');
+                        return; // Terminar éxito
+                    } catch (e1) {
+                        console.warn("CodeTabs falló, intentando AllOrigins...", e1);
+                        // Intento 2: AllOrigins (Mejor para texto/HTML)
+                        const proxyUrl2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+                        const response2 = await fetch(proxyUrl2);
+                        if (!response2.ok) throw new Error("Falló AllOrigins");
+                        const result = await processContent(response2, 'AllOrigins');
+                        
+                        // Guardar éxito
+                        const fileId = `doc_url_${Date.now()}`;
+                        const newFile = { id: fileId, name: `[IA] ${result.typeLabel}: ${url}`, type: 'url', url: url };
+                        const newRawText = (localTender.rawText || "") + `\n\n--- CONTENIDO URL: ${url} ---\n${result.extractedText}\n--- FIN URL ---\n`;
+                        const updatedFiles = [...localTender.files, newFile];
+                        setLocalTender(prev => ({ ...prev, files: updatedFiles, rawText: newRawText }));
+                        await dbActions.put(DB_STORES.TENDERS, null, { ...localTender, files: updatedFiles, rawText: newRawText });
+                        showModal('Éxito', 'Contenido extraído (Backup).', 'success');
+                    }
                 } catch (e) {
-                    console.error(e);
-                    // Fallback
+                    console.error("Fallo total lectura URL:", e);
                     const fileId = `doc_url_${Date.now()}`;
                     const newFile = { id: fileId, name: "Link (Sin Texto): " + url, type: 'url', url: url };
                     const updatedFiles = [...localTender.files, newFile];
                     setLocalTender(prev => ({ ...prev, files: updatedFiles }));
                     await dbActions.put(DB_STORES.TENDERS, null, { ...localTender, files: updatedFiles });
-                    showModal('Aviso de Lectura', 'Se añadió el enlace, pero no se pudo extraer el texto (bloqueo de seguridad o formato).', 'warning');
+                    showModal('Aviso de Lectura', 'Se añadió el enlace pero no se pudo extraer el texto. Puede tener bloqueos de seguridad.', 'warning');
                 } finally {
                     setPdfProcessing(false);
                 }
@@ -957,13 +970,13 @@
                   {envelopeFiles[envType].length === 0 && <p className="text-xs text-slate-500 italic">No hay archivos adjuntos.</p>}
                   <div className="space-y-1">
                       {envelopeFiles[envType].map((f, idx) => (
-                          <div key={idx} className="flex justify-between items-center bg-black/20 p-1.5 rounded">
-                              {/* Botones al inicio (izquierda) */}
+                          <div key={idx} className="flex items-center bg-black/20 p-1.5 rounded overflow-hidden">
+                              {/* BOTONES MOVIDOS A LA IZQUIERDA PARA QUE NO DESAPAREZCAN */}
                               <div className="flex gap-2 shrink-0 mr-3">
                                   <button onClick={()=>handleOpenItem(f)} className="text-blue-400 hover:text-white" title={f.type==='url'?'Abrir URL':'Descargar'}>{f.type === 'url' ? <Icons.ExternalLink size={14}/> : <Icons.Download size={14}/>}</button>
                                   <button onClick={()=>deleteEnvelopeFile(envType, idx)} className="text-red-400 hover:text-red-300"><Icons.Trash2 size={14}/></button>
                               </div>
-                              <span className="text-xs text-slate-300 flex items-center gap-2 truncate min-w-0">{f.type === 'url' ? <Icons.Link size={12} className="text-blue-400 shrink-0"/> : <Icons.FileText size={12} className="shrink-0"/>} <span className="truncate">{f.name}</span></span>
+                              <span className="text-xs text-slate-300 flex items-center gap-2 truncate min-w-0 flex-1" title={f.name}>{f.type === 'url' ? <Icons.Link size={12} className="text-blue-400 shrink-0"/> : <Icons.FileText size={12} className="shrink-0"/>} <span className="truncate">{f.name}</span></span>
                           </div>
                       ))}
                   </div>
@@ -1120,7 +1133,8 @@
                                           {localTender.files.map((f, i) => (
                                               <div key={i} className="p-4 border-b border-slate-800 flex justify-between items-center last:border-0">
                                                   <div className="flex items-center gap-3 w-full min-w-0">
-                                                      <div className="flex gap-2 shrink-0">
+                                                      {/* BOTONES MOVIDOS A LA IZQUIERDA PARA QUE SIEMPRE SEAN VISIBLES */}
+                                                      <div className="flex gap-2 shrink-0 mr-3">
                                                           <button onClick={()=>handleOpenItem(f)} className="text-slate-500 hover:text-blue-400 p-2" title={f.type==='url'?'Abrir Enlace':'Descargar'}><Icons.ExternalLink size={18}/></button>
                                                           <button onClick={()=>handleDeleteFile(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={18}/></button>
                                                       </div>
