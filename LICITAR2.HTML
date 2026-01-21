@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>BoardingGate - LicitacionesPro v2.4 (Stable)</title>
+    <title>BoardingGate - LicitacionesPro v2.5 (Fixed)</title>
     
     <!-- Librerías Externas -->
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
     
-    <!-- React & Babel con crossorigin anónimo para evitar errores de Script Error -->
+    <!-- React & Babel -->
     <script crossorigin="anonymous" src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin="anonymous" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -769,7 +769,6 @@
                 if (!url) return;
                 setPdfProcessing(true); 
                 try {
-                    // Usamos api.allorigins.win que es más estándar y menos bloqueado que corsproxy
                     const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
                     const response = await fetch(proxyUrl);
                     if (!response.ok) throw new Error("Error de red al descargar URL");
@@ -782,7 +781,6 @@
                         typeLabel = "PDF Remoto";
                         const blob = await response.blob();
                         const buff = await blob.arrayBuffer();
-                        // Importante: Convertir a Uint8Array
                         const typedArray = new Uint8Array(buff);
                         
                         const lib = window.pdfjsLib || pdfjsLib;
@@ -795,7 +793,6 @@
                             extractedText += tc.items.map(item => item.str).join(' ') + "\n";
                         }
                     } else {
-                        // HTML/Text
                         const text = await response.text();
                         const doc = new DOMParser().parseFromString(text, 'text/html');
                         const scripts = doc.querySelectorAll('script, style, noscript');
@@ -822,7 +819,6 @@
 
                 } catch (e) {
                     console.error(e);
-                    // Fallback
                     const fileId = `doc_url_${Date.now()}`;
                     const newFile = { id: fileId, name: "Link (Sin Texto): " + url, type: 'url', url: url };
                     const updatedFiles = [...localTender.files, newFile];
@@ -1120,9 +1116,9 @@
                                               <div key={i} className="p-4 border-b border-slate-800 flex justify-between items-center last:border-0">
                                                   <div className="flex items-center gap-3">
                                                       <div className="bg-red-900/20 text-red-400 p-2 rounded">{f.type === 'url' ? <Icons.Link size={18} className="text-blue-400"/> : <Icons.FileText size={18}/>}</div>
-                                                      <span className="text-sm text-slate-200">{f.name}</span>
+                                                      <span className="text-sm text-slate-200 truncate min-w-0 flex-1">{f.name}</span>
                                                   </div>
-                                                  <div className="flex gap-2">
+                                                  <div className="flex gap-2 shrink-0">
                                                       <button onClick={()=>handleOpenItem(f)} className="text-slate-500 hover:text-blue-400 p-2" title={f.type==='url'?'Abrir Enlace':'Descargar'}><Icons.ExternalLink size={18}/></button>
                                                       <button onClick={()=>handleDeleteFile(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={18}/></button>
                                                   </div>
@@ -1230,21 +1226,119 @@
                           )}
                           {activeTab === 5 && renderBidAssistant()}
                       </div>
-                      
-                      {/* SECCIÓN PRINT-ONLY GLOBAL PARA WORKSPACE */}
                       <div className="print-only hidden p-8 bg-white text-black">
                          <h1 className="text-2xl font-bold mb-4">Resumen Técnico: {localTender.title}</h1>
                          <div className="whitespace-pre-wrap font-mono text-sm border-b pb-4 mb-4">{generateReportText(localTender.analysis)}</div>
                          {aiAdvice.economic && (<div className="mb-4"><h2 className="text-lg font-bold">Estrategia Económica</h2><p className="text-sm whitespace-pre-wrap">{aiAdvice.economic}</p></div>)}
                          <div className="mb-4"><strong>Oferta Final:</strong> {formatCurrency(precioOfertado)} (Baja: {baja.toFixed(2)}%)</div>
-                         <h3 className="font-bold mt-4">Documentación Adjunta (Checklist)</h3>
-                         <div className="grid grid-cols-3 gap-4 mt-2">
-                             <div><strong>Sobre A</strong><ul>{envelopeFiles.A.map(f=><li key={f.id}>[ ] {f.name}</li>)}</ul></div>
-                             <div><strong>Sobre B</strong><ul>{envelopeFiles.B.map(f=><li key={f.id}>[ ] {f.name}</li>)}</ul></div>
-                             <div><strong>Sobre C</strong><ul>{envelopeFiles.C.map(f=><li key={f.id}>[ ] {f.name}</li>)}</ul></div>
-                         </div>
                       </div>
                   </main>
+              </div>
+          );
+      };
+
+      const Dashboard = ({ tenders, setTenders, onOpenTender, showPrompt, showModal }) => {
+          const handleNew = () => {
+              showPrompt('Nuevo Expediente', 'Introduce un título o referencia para identificar la licitación:', 'Ej: Obras Reforma Polideportivo...', async (title) => {
+                   const newT = { id: Date.now(), title, status: 'Nueva', statusDate: new Date().toISOString(), files: [], analysis: null, envelopeFiles: {A:[], B:[], C:[]} };
+                   await dbActions.put(DB_STORES.TENDERS, null, newT);
+                   setTenders([newT, ...tenders]);
+              });
+          };
+
+          const handleDeleteTender = (e, t) => {
+              e.stopPropagation();
+              showModal('¿Eliminar Expediente?', `¿Estás seguro de querer borrar "${t.title}"? Esta acción no se puede deshacer.`, 'danger', async () => {
+                  await dbActions.del(DB_STORES.TENDERS, t.id);
+                  // También borrar archivos asociados si fuera necesario, simplificado aquí al registro.
+                  setTenders(prev => prev.filter(x => x.id !== t.id));
+              });
+          };
+
+          const handleStatusChange = async (e, t, newStatus) => {
+              e.stopPropagation();
+              const updatedTender = { ...t, status: newStatus, statusDate: new Date().toISOString() };
+              await dbActions.put(DB_STORES.TENDERS, null, updatedTender);
+              setTenders(prev => prev.map(x => x.id === t.id ? updatedTender : x));
+          };
+
+          return (
+              <div className="p-6 h-full flex flex-col fade-in no-print">
+                   <div className="flex justify-between items-center mb-8">
+                      <div><h2 className="text-3xl font-display font-bold text-white tracking-tight">Expedientes</h2><p className="text-slate-400 text-sm">Gestión de licitaciones en curso</p></div>
+                      <button onClick={handleNew} className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2 shadow-lg shadow-blue-500/20"><Icons.Plus/> Nuevo Expediente</button>
+                  </div>
+                  {tenders.length === 0 ? <div className="col-span-full text-center py-20 text-slate-500 italic">No hay licitaciones activas. Crea una nueva.</div> : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-20 custom-scrollbar">
+                          {tenders.map(t => (
+                              <div key={t.id} onClick={()=>onOpenTender(t)} className="glass-panel p-6 rounded-2xl cursor-pointer hover:bg-slate-800/80 transition-all hover:scale-[1.01] group border-l-4 border-l-transparent hover:border-l-blue-500 relative">
+                                  <div className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button onClick={(e) => handleDeleteTender(e, t)} className="p-2 bg-slate-900/80 hover:bg-red-900/50 text-slate-500 hover:text-red-400 rounded-lg border border-slate-700"><Icons.Trash2 size={16}/></button>
+                                  </div>
+                                  <div className="flex justify-between items-start mb-4">
+                                      <div className="bg-slate-800 p-2 rounded text-slate-300 group-hover:text-blue-400 transition-colors"><Icons.Briefcase/></div>
+                                  </div>
+                                  <h3 className="text-lg font-bold text-white mb-2 line-clamp-2">{t.title}</h3>
+                                  <div className="mb-4" onClick={e => e.stopPropagation()}>
+                                      <select value={t.status || 'Nueva'} onChange={(e) => handleStatusChange(e, t, e.target.value)} className={`text-[10px] px-2 py-1 rounded font-bold uppercase outline-none border-none cursor-pointer ${t.status==='Adjudicada' ? 'bg-green-900/30 text-green-300' : t.status==='Descartada' ? 'bg-red-900/30 text-red-300' : 'bg-blue-900/30 text-blue-300'}`}>
+                                          <option value="Estudio">En Estudio</option>
+                                          <option value="Preparada">Preparada</option>
+                                          <option value="Presentada">Presentada</option>
+                                          <option value="Adjudicada">Adjudicada</option>
+                                          <option value="Descartada">Descartada</option>
+                                          <option value="Nueva">Nueva</option>
+                                      </select>
+                                      {t.statusDate && <div className="text-[10px] text-slate-500 mt-1">Modificado: {new Date(t.statusDate).toLocaleDateString()}</div>}
+                                  </div>
+                                  {t.analysis ? (<div className="space-y-1"><div className="text-xs text-slate-400 truncate"><Icons.Building size={12} className="inline mr-1"/> {t.analysis.resumen_ejecutivo?.organismo}</div><div className="text-xs text-green-400 font-mono font-bold">{formatCurrency(t.analysis.datos_economicos?.pbl_sin_iva)}</div></div>) : (<div className="text-xs text-slate-500 italic">Pendiente de análisis...</div>)}
+                                  <div className="mt-4 pt-4 border-t border-slate-700/50 flex justify-between items-center"><span className="text-[10px] text-slate-500">{new Date(t.id).toLocaleDateString()}</span><span className="text-xs text-blue-400 font-bold group-hover:translate-x-1 transition-transform">Abrir &rarr;</span></div>
+                              </div>
+                          ))}
+                      </div>
+                  )}
+              </div>
+          );
+      };
+
+      const App = () => {
+          const [view, setView] = useState('dashboard'); 
+          const [tenders, setTenders] = useState([]);
+          const [companies, setCompanies] = useState([]);
+          const [activeTender, setActiveTender] = useState(null);
+          const [rk, setRk] = usePersistentState('bg_app_rk_st', ''); 
+          const [tc, setTc] = usePersistentState('bg_app_tc_st', 0); 
+          const isAuth = _bg_check_sys(rk);
+          const [modal, setModal] = useState({ open: false, title: '', message: '', type: '', onConfirm: null });
+          const [promptModal, setPromptModal] = useState({ open: false, title: '', message: '', placeholder: '', onConfirm: null });
+          const [apiKey] = usePersistentState('gemini_api_key', '');
+
+          useEffect(() => { const init = async () => { setTenders(await dbActions.getAll(DB_STORES.TENDERS)); setCompanies(await dbActions.getAll(DB_STORES.COMPANIES)); }; init(); }, [view]);
+
+          const showModal = (title, message, type = 'default', onConfirm = null) => { setModal({ open: true, title, message, type, onConfirm }); };
+          const showPrompt = (title, message, placeholder, onConfirm) => { setPromptModal({ open: true, title, message, placeholder, onConfirm }); };
+          const handleActivate = (code) => { if(!code) return; if(_bg_check_sys(code)) { setRk(code); showModal('ACTIVACIÓN ÉXITO', 'Sistema registrado.', 'success'); } else { setRk(''); showModal('ERROR', 'Código inválido.', 'danger'); } };
+          const handleOpenTender = (t) => { if (!isAuth && tc >= 10) { showModal('Prueba Finalizada', 'Límite de 10 licitaciones.', 'danger', () => setView('settings')); return; } if(!isAuth) setTc(prev => prev + 1); setActiveTender(t); setView('workspace'); };
+
+          return (
+              <div className="h-full flex flex-col text-white overflow-hidden">
+                  {view !== 'workspace' && (
+                      <nav className="shrink-0 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-6 py-4 flex justify-between items-center z-20 no-print">
+                          <div><div className="text-3xl font-display font-bold tracking-tight leading-none"><span className="text-white">Boarding</span><span className="text-blue-600">Gate</span></div><div className="text-sm font-bold tracking-widest"><span className="text-white">Licitaciones</span><span className="text-green-600">Pro</span></div></div>
+                          <div className="flex bg-slate-800 rounded-lg p-1 gap-1">
+                              <button onClick={()=>setView('dashboard')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='dashboard'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Briefcase size={16}/> Licitaciones</button>
+                              <button onClick={()=>setView('companies')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='companies'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Building size={16}/> Empresas</button>
+                              <button onClick={()=>setView('settings')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='settings'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Settings size={16}/> Config</button>
+                          </div>
+                      </nav>
+                  )}
+                  <div className="flex-1 overflow-hidden relative">
+                      {view === 'dashboard' && <Dashboard tenders={tenders} setTenders={setTenders} onOpenTender={handleOpenTender} showPrompt={showPrompt} showModal={showModal} />}
+                      {view === 'companies' && <CompanyManager companies={companies} setCompanies={setCompanies} showModal={showModal} showPrompt={showPrompt} />}
+                      {view === 'workspace' && activeTender && <Workspace tender={activeTender} onBack={()=>setView('dashboard')} apiKey={apiKey} companies={companies} showModal={showModal} showPrompt={showPrompt} />}
+                      {view === 'settings' && <SettingsTab isAuth={isAuth} trialCount={tc} onActivate={handleActivate} />}
+                  </div>
+                  <Modal isOpen={modal.open} title={modal.title} message={modal.message} type={modal.type} onClose={() => setModal({ ...modal, open: false })} onConfirm={modal.onConfirm ? () => { modal.onConfirm(); setModal({ ...modal, open: false }); } : null}/>
+                  <PromptModal isOpen={promptModal.open} title={promptModal.title} message={promptModal.message} placeholder={promptModal.placeholder} onClose={() => setPromptModal({ ...promptModal, open: false })} onConfirm={(val) => { promptModal.onConfirm(val); setPromptModal({ ...promptModal, open: false }); }}/>
               </div>
           );
       };
