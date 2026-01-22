@@ -107,8 +107,6 @@
       };
 
       // --- UTILS ---
-      // Esta función SOLO valida si una clave es correcta HOY. 
-      // No debe usarse para verificar estado persistente, solo en el momento del input.
       const _bg_check_sys = (k) => {
           if (!k) return false;
           const d = new Date();
@@ -461,7 +459,7 @@
                                   <div className="flex-1">
                                       <label className="block text-xs font-bold text-slate-400 mb-1">Modelo de IA</label>
                                       <select value={model} onChange={(e) => setModel(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-xl p-3 text-white text-sm focus:outline-none">
-                                          <option value="gemini-1.5-flash">Gemini 1.5 Flash (Rápido)</option>
+                                          <option value="gemini-1.5-flash">Gemini 1.5 Flash (Recomendado)</option>
                                           <option value="gemini-1.5-pro">Gemini 1.5 Pro (Potente)</option>
                                       </select>
                                   </div>
@@ -469,15 +467,23 @@
                               </div>
                               {testStatus === 'error' && <div className="mt-4 p-4 bg-red-900/30 border border-red-500/50 rounded-xl text-red-200 text-xs font-mono whitespace-pre-wrap">{errorDetail}</div>}
                           </div>
-                          <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4">
-                              <h4 className="text-blue-400 font-bold text-sm mb-2 flex items-center gap-2"><Icons.HelpCircle size={16}/> ¿Cómo obtener la API Key?</h4>
-                              <ol className="text-sm text-slate-300 space-y-3 list-decimal pl-4 mb-4">
-                                  <li>Accede a <strong>Google AI Studio</strong> con tu cuenta de Google (botón abajo).</li>
-                                  <li>Haz clic en el botón azul <strong>"Get API key"</strong> en la esquina superior izquierda.</li>
-                                  <li>En el cuadro emergente, haz clic en <strong>"Create API key in new project"</strong>.</li>
-                                  <li>Cópiala y pégala en el campo "Google Gemini API Key".</li>
+                          
+                          {/* SECCION AYUDA API KEY ACTUALIZADA */}
+                          <div className="bg-blue-900/10 border border-blue-500/30 rounded-xl p-6 mt-6">
+                              <h4 className="text-blue-400 font-bold text-base mb-4 flex items-center gap-2">
+                                  <Icons.HelpCircle size={18}/> ¿Cómo obtener la API Key?
+                              </h4>
+                              <ol className="text-sm text-slate-300 space-y-3 list-decimal pl-5 mb-6 leading-relaxed">
+                                  <li>Accede a <strong className="text-white">Google AI Studio</strong> con tu cuenta de Google (botón abajo).</li>
+                                  <li>Si es tu primera vez, acepta los términos de uso.</li>
+                                  <li>Haz clic en el botón azul <strong className="text-white">"Get API key"</strong> en la esquina superior izquierda.</li>
+                                  <li>En el cuadro emergente, haz clic en <strong className="text-white">"Create API key in new project"</strong>.</li>
+                                  <li>Se generará una clave única. Cópiala.</li>
+                                  <li>Vuelve aquí y <strong className="text-white">pega la clave en el campo "Google Gemini API Key"</strong> de este formulario.</li>
                               </ol>
-                              <a href="https://aistudio.google.com/app/apikey" target="_blank" className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-lg"><Icons.ExternalLink size={16}/> Ir a Google AI Studio</a>
+                              <a href="https://aistudio.google.com/app/apikey" target="_blank" className="w-full block text-center bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold transition-colors shadow-lg flex justify-center items-center gap-2">
+                                  <Icons.ExternalLink size={18}/> Ir a Google AI Studio
+                              </a>
                           </div>
                       </div>
                   </div>
@@ -1080,337 +1086,173 @@
                       <div className="print-only hidden p-8 bg-white text-black">
                          <h1 className="text-2xl font-bold mb-4">Resumen Técnico: {localTender.title}</h1>
                          <div className="whitespace-pre-wrap font-mono text-sm border-b pb-4 mb-4">{generateReportText(localTender.analysis)}</div>
+                         {aiAdvice.economic && (<div className="mb-4"><h2 className="text-lg font-bold">Estrategia Económica</h2><p className="text-sm whitespace-pre-wrap">{aiAdvice.economic}</p></div>)}
                          <div className="mb-4"><strong>Oferta Final:</strong> {formatCurrency(precioOfertado)} (Baja: {baja.toFixed(2)}%)</div>
                       </div>
                   </div>
               );
           };
 
-          return (
-              <div className="h-full flex flex-col bg-[#0a0a0a]">
-                  <header className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center no-print">
-                      <div className="flex items-center gap-4">
-                          <button onClick={onBack} className="flex items-center gap-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition-colors border border-slate-700"><Icons.ArrowLeft size={16}/> <span className="text-xs font-bold uppercase">Volver al Panel</span></button>
-                          <div>
-                              <h2 className="text-lg font-bold text-white truncate max-w-md">{localTender.title}</h2>
-                              <div className="flex items-center gap-2 text-xs text-slate-400">
-                                  <span className={`px-2 py-0.5 rounded ${localTender.status==='Nueva'?'bg-blue-900 text-blue-300':'bg-amber-900 text-amber-300'}`}>{localTender.status}</span>
-                                  {localTender.analysis?.resumen_ejecutivo?.numero_expediente && <span>Exp: {localTender.analysis.resumen_ejecutivo.numero_expediente}</span>}
-                              </div>
-                          </div>
-                      </div>
-                      <div className="flex bg-slate-800 p-1 rounded-lg">
-                           {[1,2,3,4,5].map(t => (
-                               <button key={t} onClick={()=>setActiveTab(t)} className={`px-4 py-2 rounded text-xs font-bold transition-all ${activeTab===t ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>
-                                   {t===1 && "1. Documentos"} {t===2 && "2. Análisis"} {t===3 && "3. Consultas IA"} {t===4 && "4. Económica"} {t===5 && "5. Oferta"}
-                               </button>
-                           ))}
-                      </div>
-                  </header>
-                  <main className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-                      <div className="max-w-5xl mx-auto">
-                          {activeTab === 1 && (
-                              <div className="space-y-6 fade-in no-print">
-                                  <div className="glass-panel p-8 rounded-2xl text-center border-dashed border-2 border-slate-700 hover:border-blue-500 transition-colors">
-                                      <div className="mb-4 text-blue-500 flex justify-center"><Icons.Upload size={48} /></div>
-                                      <h3 className="text-xl font-bold text-white mb-2">Subir Pliegos (PDF) o URLs</h3>
-                                      <p className="text-slate-400 text-sm mb-6">Sube el PCAP y PPT para que la IA los analice. Puedes añadir enlaces externos para consultarlos.</p>
-                                      <div className="flex justify-center gap-4">
-                                          <button onClick={handleAddDocUrl} className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-xl shadow-lg border border-slate-600 flex items-center gap-2 font-bold text-sm transition-colors"><Icons.Link size={18}/> Añadir Link Web</button>
-                                          <label className="btn-primary px-8 py-3 rounded-xl cursor-pointer shadow-lg inline-flex items-center gap-2 text-sm">
-                                              {pdfProcessing ? <Icons.Loader/> : <Icons.Plus/>} Subir Documentos PDF
-                                              <input type="file" multiple accept="application/pdf" className="hidden" onChange={handlePdfUpload} disabled={pdfProcessing}/>
-                                          </label>
-                                      </div>
-                                  </div>
-                                  {localTender.files.length > 0 && (
-                                      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-                                          <div className="p-4 bg-slate-800/50 font-bold text-slate-300 text-sm">Archivos del Expediente</div>
-                                          {localTender.files.map((f, i) => (
-                                              <div key={i} className="p-4 border-b border-slate-800 flex justify-between items-center last:border-0 gap-4">
-                                                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                                                      <div className="bg-red-900/20 text-red-400 p-2 rounded shrink-0">{f.type === 'url' ? <Icons.Link size={18} className="text-blue-400"/> : <Icons.FileText size={18}/>}</div>
-                                                      <span className="text-sm text-slate-200 truncate" title={f.name}>{f.name}</span>
-                                                  </div>
-                                                  <div className="flex gap-2 shrink-0">
-                                                      <button onClick={()=>handleOpenItem(f)} className="text-slate-500 hover:text-blue-400 p-2" title={f.type==='url'?'Abrir Enlace':'Descargar'}><Icons.ExternalLink size={18}/></button>
-                                                      <button onClick={()=>handleDeleteFile(i)} className="text-slate-500 hover:text-red-400 p-2" title="Eliminar archivo"><Icons.Trash2 size={18}/></button>
-                                                  </div>
-                                              </div>
-                                          ))}
-                                          <div className="p-4 bg-slate-800/30 flex justify-end"><button onClick={runAnalysis} disabled={isAnalyzing} className="btn-primary px-6 py-2 rounded-lg flex items-center gap-2 text-sm shadow-lg shadow-blue-900/30">{isAnalyzing ? <Icons.Loader/> : <Icons.BrainCircuit/>} {isAnalyzing ? 'Analizando Pliego...' : 'EJECUTAR ANÁLISIS IA'}</button></div>
-                                      </div>
-                                  )}
-                              </div>
-                          )}
-                          {activeTab === 2 && (
-                              <div className="fade-in space-y-6 no-print">
-                                  {!localTender.analysis ? (
-                                      <div className="text-center py-20 text-slate-500"><Icons.BrainCircuit size={48} className="mx-auto mb-4 opacity-50"/><p>No hay análisis aún. Ve a la pestaña "Documentos" y ejecútalo.</p></div>
-                                  ) : (
-                                      <>
-                                          <div className="flex justify-end mb-4 gap-2">
-                                               <button onClick={window.print} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-600"><Icons.Printer size={16}/> Imprimir</button>
-                                               <button onClick={()=>setReportVisible(!reportVisible)} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-600"><Icons.FileText size={16}/> {reportVisible ? 'Ocultar Informe' : 'Ver Informe de Texto'}</button>
-                                          </div>
-                                          {reportVisible && (<div className="glass-panel p-6 rounded-xl mb-6 border border-blue-500/30 relative group"><div className="absolute top-4 right-4"><CopyBtn text={generateReportText(localTender.analysis)}/></div><h4 className="text-blue-400 text-sm font-bold uppercase mb-4 tracking-wider">Informe Completo</h4><div className="bg-slate-900 p-6 rounded text-xs text-slate-300 font-mono whitespace-pre-wrap select-all max-h-96 overflow-y-auto leading-relaxed border border-slate-700">{generateReportText(localTender.analysis)}</div></div>)}
-                                          <div className="glass-panel p-6 rounded-xl relative"><div className="absolute top-4 right-4"><CopyBtn text={JSON.stringify(localTender.analysis.resumen_ejecutivo, null, 2)}/></div><h4 className="text-blue-400 text-sm font-bold uppercase mb-4 tracking-wider flex items-center gap-2"><Icons.Building size={16}/> Resumen Ejecutivo</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm"><div><div className="text-xs text-slate-500">Organismo</div><div className="text-white font-bold">{localTender.analysis.resumen_ejecutivo?.organismo}</div></div><div><div className="text-xs text-slate-500">Expediente</div><div className="text-white">{localTender.analysis.resumen_ejecutivo?.numero_expediente}</div></div><div className="col-span-full"><div className="text-xs text-slate-500">Objeto Detallado</div><div className="text-white italic">{localTender.analysis.resumen_ejecutivo?.objeto_detallado}</div></div><div><div className="text-xs text-slate-500">Localización</div><div className="text-white">{localTender.analysis.resumen_ejecutivo?.localizacion}</div></div><div><div className="text-xs text-slate-500">CPV</div><div className="text-white font-mono">{localTender.analysis.resumen_ejecutivo?.cpv}</div></div></div></div>
-                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                              <div className="glass-panel p-6 rounded-xl relative"><div className="absolute top-4 right-4"><CopyBtn text={JSON.stringify(localTender.analysis.datos_economicos, null, 2)}/></div><h4 className="text-green-400 text-sm font-bold uppercase mb-4 tracking-wider flex items-center gap-2"><Icons.Calculator size={16}/> Económico y Plazos</h4><div className="space-y-4"><div className="flex justify-between items-center border-b border-slate-700 pb-2"><span className="text-sm text-slate-400">PBL (Sin IVA)</span><span className="text-green-400 font-bold font-mono text-lg">{formatCurrency(localTender.analysis.datos_economicos?.pbl_sin_iva)}</span></div><div className="flex justify-between items-center"><span className="text-sm text-slate-400">Plazo Ejecución</span><span className="text-white font-bold">{localTender.analysis.plazos_fechas?.plazo_ejecucion}</span></div><div className="bg-slate-900/50 p-3 rounded border border-slate-700 mt-2"><div className="text-[10px] text-blue-300 font-bold flex items-center gap-1 mb-1"><Icons.Clock size={10}/> FECHA LÍMITE PRESENTACIÓN</div><div className="text-white font-bold">{localTender.analysis.plazos_fechas?.fecha_limite_presentacion || 'Consultar Plataforma'}</div></div></div></div>
-                                              <div className="glass-panel p-6 rounded-xl relative"><div className="absolute top-4 right-4"><CopyBtn text={JSON.stringify(localTender.analysis.requisitos_admision, null, 2)}/></div><h4 className="text-amber-400 text-sm font-bold uppercase mb-4 tracking-wider flex items-center gap-2"><Icons.AlertTriangle size={16}/> Admisión y Solvencia</h4><div className="space-y-3 text-sm"><div><div className="text-xs text-slate-500">Clasificación</div><div className="text-yellow-200 font-mono font-bold bg-yellow-900/20 px-2 py-1 rounded inline-block">{localTender.analysis.requisitos_admision?.clasificacion_exigida || 'No exigida'}</div></div><div><div className="text-xs text-slate-500">Solvencia Técnica</div><div className="text-slate-300 text-xs">{localTender.analysis.requisitos_admision?.solvencia_tecnica || 'Según pliegos'}</div></div></div></div>
-                                          </div>
-                                      </>
-                                  )}
-                              </div>
-                          )}
-                          {activeTab === 3 && (
-                              <div className="fade-in h-[600px] glass-panel rounded-2xl flex flex-col overflow-hidden border border-slate-700 no-print">
-                                  <div className="bg-slate-800/80 p-4 border-b border-slate-700 flex justify-between items-center">
-                                      <div className="flex items-center gap-3">
-                                          <div className="bg-blue-500/20 p-2 rounded text-blue-400"><Icons.MessageSquare size={20}/></div>
-                                          <div>
-                                              <h3 className="font-bold text-white text-sm">Interrogatorio de Documentación</h3>
-                                              <p className="text-xs text-slate-400">Pregunta sobre el pliego. Respuestas basadas estrictamente en el texto subido.</p>
-                                          </div>
-                                      </div>
-                                      {suggestedQuestions.length === 0 && localTender.rawText && (
-                                          <button onClick={handleGenerateSuggestions} className="text-xs bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 border border-slate-500 transition-colors">
-                                              <Icons.Sparkles size={14} className="text-yellow-400"/> Sugerir Preguntas Clave
-                                          </button>
-                                      )}
-                                  </div>
-                                  <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-900/50 custom-scrollbar">
-                                      {suggestedQuestions.length > 0 && chatHistory.length === 0 && (
-                                          <div className="mb-4">
-                                              <p className="text-xs text-slate-500 uppercase font-bold mb-3 flex items-center gap-2"><Icons.Sparkles size={12}/> Sugerencias de la IA:</p>
-                                              <div className="flex flex-wrap gap-2">
-                                                  {suggestedQuestions.map((q, i) => (
-                                                      <button key={i} onClick={()=>handleChatSend(q)} className="bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl px-4 py-2 text-xs text-blue-300 transition-colors text-left hover:scale-[1.02] active:scale-95">
-                                                          {q}
-                                                      </button>
-                                                  ))}
-                                              </div>
-                                          </div>
-                                      )}
-                                      {chatHistory.length === 0 && suggestedQuestions.length === 0 && (
-                                          <div className="flex flex-col items-center justify-center h-full text-slate-500 opacity-50">
-                                              <Icons.MessageSquare size={48} className="mb-2"/>
-                                              <p className="text-sm">Envía una pregunta para comenzar...</p>
-                                          </div>
-                                      )}
-                                      {chatHistory.map((msg, idx) => (
-                                          <div key={idx} className={`chat-bubble ${msg.role === 'user' ? 'chat-user' : 'chat-ai'} flex flex-col`}>
-                                              <div className="whitespace-pre-wrap">{msg.text}</div>
-                                              {msg.role === 'ai' && <div className="mt-2 self-end opacity-70 hover:opacity-100 transition-opacity"><CopyBtn text={msg.text} className="bg-black/20 hover:bg-black/40"/></div>}
-                                          </div>
-                                      ))}
-                                      {chatLoading && <div className="flex justify-start"><div className="bg-slate-800 p-3 rounded-xl border border-slate-700"><Icons.Loader className="text-blue-500"/></div></div>}
-                                      <div ref={chatEndRef} />
-                                  </div>
-                                  <div className="p-4 bg-slate-800 border-t border-slate-700 flex gap-2">
-                                      <input type="text" className="input-std" placeholder="Ej: ¿Hay visita obligatoria a la obra?" value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=> e.key === 'Enter' && handleChatSend()}/>
-                                      <button onClick={()=>handleChatSend()} disabled={!chatInput.trim() || chatLoading} className="bg-blue-600 hover:bg-blue-500 text-white p-3 rounded-lg disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20"><Icons.Send/></button>
-                                  </div>
-                              </div>
-                          )}
-                          {activeTab === 4 && (
-                              <div className="fade-in max-w-3xl mx-auto no-print">
-                                  <div className="glass-panel p-8 rounded-2xl shadow-2xl">
-                                      <div className="flex items-center justify-between gap-3 mb-8 pb-4 border-b border-slate-700">
-                                          <div className="flex items-center gap-3"><div className="p-3 bg-green-500/20 text-green-400 rounded-xl"><Icons.Calculator size={32}/></div><div><h3 className="text-2xl font-bold text-white">Calculadora de Oferta</h3><p className="text-sm text-slate-400">Estudio de costes y baja</p></div></div>
-                                          <button onClick={()=>getAdvice('economic')} className="text-xs bg-blue-600 px-3 py-1 rounded text-white font-bold hover:bg-blue-500 flex items-center gap-2">{loadingAdvice ? <Icons.Loader/> : <Icons.BrainCircuit/>} Consultar Estrategia a la IA</button>
-                                      </div>
-                                      {aiAdvice.economic && (<div className="mb-6 bg-slate-800 p-4 rounded-lg border-l-4 border-blue-500 fade-in"><h5 className="font-bold text-blue-300 text-sm mb-2">Análisis de Mercado (IA)</h5><div className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">{aiAdvice.economic}</div></div>)}
-                                      <div className="grid grid-cols-2 gap-8 mb-8"><div><label className="text-xs text-slate-400 font-bold block mb-2">Costes Directos + Indirectos (€)</label><input type="number" className="input-std text-right font-mono text-lg" value={costes} onChange={e=>setCostes(parseFloat(e.target.value)||0)} /></div><div><label className="text-xs text-slate-400 font-bold block mb-2">Margen Industrial Deseado (%)</label><input type="number" className="input-std text-right font-mono text-lg text-yellow-400 border-yellow-500/30" value={margen} onChange={e=>setMargen(parseFloat(e.target.value)||0)} /></div></div>
-                                      <div className="bg-slate-900 rounded-xl p-6 border border-slate-700 space-y-6">
-                                          <div className="flex justify-between items-center"><span className="text-slate-400 text-sm">Presupuesto Base (PBL)</span><span className="text-white font-mono font-bold">{formatCurrency(pbl)}</span></div>
-                                          <div className="flex justify-between items-center"><span className="text-blue-400 text-sm font-bold">Precio de Venta Objetivo</span><span className="text-blue-300 font-mono font-bold text-xl">{formatCurrency(costes * (1 + margen/100))}</span></div>
-                                          <div className="h-px bg-slate-700 my-2"></div>
-                                          <div>
-                                              <label className="flex justify-between text-sm mb-2"><span className="text-white font-bold">Baja a Ofertar (%)</span> <span className="text-green-400 font-mono font-bold text-xl">{baja.toFixed(2)}%</span></label>
-                                              <div className="flex items-center gap-3">
-                                                  <button onClick={() => setBaja(b => Math.max(0, b - 0.01))} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-white" title="Disminuir 0.01%"><Icons.Minus size={16}/></button>
-                                                  <input type="range" min="0" max="60" step="0.01" className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500" value={baja} onChange={e=>setBaja(parseFloat(e.target.value))} />
-                                                  <button onClick={() => setBaja(b => Math.min(60, b + 0.01))} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-white" title="Aumentar 0.01%"><Icons.Plus size={16}/></button>
-                                              </div>
-                                          </div>
-                                          <div className="grid grid-cols-2 gap-4 pt-4"><div className="bg-black/30 p-3 rounded border border-slate-600"><div className="text-[10px] text-slate-500 uppercase">Importe Oferta (Sin IVA)</div><div className="text-white font-mono font-bold text-lg">{formatCurrency(precioOfertado)}</div></div><div className="bg-black/30 p-3 rounded border border-slate-600"><div className="text-[10px] text-slate-500 uppercase">Resultado Neto</div><div className={`font-mono font-bold text-lg ${beneficio >= 0 ? 'text-green-400' : 'text-red-500'}`}>{formatCurrency(beneficio)}</div></div></div></div>
-                                  </div>
-                              </div>
-                          )}
-                          {activeTab === 5 && renderBidAssistant()}
-                      </div>
-                      <div className="print-only hidden p-8 bg-white text-black">
-                         <h1 className="text-2xl font-bold mb-4">Resumen Técnico: {localTender.title}</h1>
-                         <div className="whitespace-pre-wrap font-mono text-sm border-b pb-4 mb-4">{generateReportText(localTender.analysis)}</div>
-                         {aiAdvice.economic && (<div className="mb-4"><h2 className="text-lg font-bold">Estrategia Económica</h2><p className="text-sm whitespace-pre-wrap">{aiAdvice.economic}</p></div>)}
-                         <div className="mb-4"><strong>Oferta Final:</strong> {formatCurrency(precioOfertado)} (Baja: {baja.toFixed(2)}%)</div>
-                      </div>
-                  </main>
-              </div>
-          );
-      };
+          const Dashboard = ({ tenders, setTenders, onOpenTender, showPrompt, showModal }) => {
+              const handleNew = () => {
+                  showPrompt('Nuevo Expediente', 'Introduce un título o referencia para identificar la licitación:', 'Ej: Obras Reforma Polideportivo...', null, async (title) => {
+                       const newT = { id: Date.now(), title, status: 'Nueva', statusDate: new Date().toISOString(), files: [], analysis: null, envelopeFiles: {A:[], B:[], C:[]} };
+                       await dbActions.put(DB_STORES.TENDERS, null, newT);
+                       setTenders([newT, ...tenders]);
+                  });
+              };
 
-      const Dashboard = ({ tenders, setTenders, onOpenTender, showPrompt, showModal }) => {
-          const handleNew = () => {
-              showPrompt('Nuevo Expediente', 'Introduce un título o referencia para identificar la licitación:', 'Ej: Obras Reforma Polideportivo...', null, async (title) => {
-                   const newT = { id: Date.now(), title, status: 'Nueva', statusDate: new Date().toISOString(), files: [], analysis: null, envelopeFiles: {A:[], B:[], C:[]} };
-                   await dbActions.put(DB_STORES.TENDERS, null, newT);
-                   setTenders([newT, ...tenders]);
-              });
-          };
+              const handleRenameTender = (e, t) => {
+                  e.stopPropagation();
+                  showPrompt('Renombrar Expediente', 'Introduce el nuevo nombre:', 'Título...', t.title, async (newTitle) => {
+                      if(!newTitle) return;
+                      const updatedTender = { ...t, title: newTitle };
+                      await dbActions.put(DB_STORES.TENDERS, null, updatedTender);
+                      setTenders(prev => prev.map(x => x.id === t.id ? updatedTender : x));
+                  });
+              };
 
-          const handleRenameTender = (e, t) => {
-              e.stopPropagation();
-              showPrompt('Renombrar Expediente', 'Introduce el nuevo nombre:', 'Título...', t.title, async (newTitle) => {
-                  if(!newTitle) return;
-                  const updatedTender = { ...t, title: newTitle };
+              const handleDeleteTender = (e, t) => {
+                  e.stopPropagation();
+                  showModal('¿Eliminar Expediente?', `¿Estás seguro de querer borrar "${t.title}"? Esta acción no se puede deshacer.`, 'danger', async () => {
+                      await dbActions.del(DB_STORES.TENDERS, t.id);
+                      setTenders(prev => prev.filter(x => x.id !== t.id));
+                  });
+              };
+
+              const handleStatusChange = async (e, t, newStatus) => {
+                  e.stopPropagation();
+                  const updatedTender = { ...t, status: newStatus, statusDate: new Date().toISOString() };
                   await dbActions.put(DB_STORES.TENDERS, null, updatedTender);
                   setTenders(prev => prev.map(x => x.id === t.id ? updatedTender : x));
-              });
-          };
+              };
 
-          const handleDeleteTender = (e, t) => {
-              e.stopPropagation();
-              showModal('¿Eliminar Expediente?', `¿Estás seguro de querer borrar "${t.title}"? Esta acción no se puede deshacer.`, 'danger', async () => {
-                  await dbActions.del(DB_STORES.TENDERS, t.id);
-                  setTenders(prev => prev.filter(x => x.id !== t.id));
-              });
-          };
-
-          const handleStatusChange = async (e, t, newStatus) => {
-              e.stopPropagation();
-              const updatedTender = { ...t, status: newStatus, statusDate: new Date().toISOString() };
-              await dbActions.put(DB_STORES.TENDERS, null, updatedTender);
-              setTenders(prev => prev.map(x => x.id === t.id ? updatedTender : x));
-          };
-
-          return (
-              <div className="p-6 h-full flex flex-col fade-in no-print">
-                   <div className="flex justify-between items-center mb-8">
-                      <div><h2 className="text-3xl font-display font-bold text-white tracking-tight">Expedientes</h2><p className="text-slate-400 text-sm">Gestión de licitaciones en curso</p></div>
-                      <button onClick={handleNew} className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2 shadow-lg shadow-blue-500/20"><Icons.Plus/> Nuevo Expediente</button>
-                  </div>
-                  {tenders.length === 0 ? <div className="col-span-full text-center py-20 text-slate-500 italic">No hay licitaciones activas. Crea una nueva.</div> : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-20 custom-scrollbar">
-                          {tenders.map(t => (
-                              <div key={t.id} onClick={()=>onOpenTender(t)} className="glass-panel p-6 rounded-2xl cursor-pointer hover:bg-slate-800/80 transition-all hover:scale-[1.01] group border-l-4 border-l-transparent hover:border-l-blue-500 relative">
-                                  <div className="absolute top-4 right-4 z-10 flex gap-2">
-                                      <button onClick={(e) => handleRenameTender(e, t)} className="p-2 bg-slate-900/80 hover:bg-slate-700 text-slate-500 hover:text-white rounded-lg border border-slate-700" title="Renombrar"><Icons.Edit size={16}/></button>
-                                      <button onClick={(e) => handleDeleteTender(e, t)} className="p-2 bg-slate-900/80 hover:bg-red-900/50 text-slate-500 hover:text-red-400 rounded-lg border border-slate-700" title="Eliminar"><Icons.Trash2 size={16}/></button>
-                                  </div>
-                                  <div className="flex justify-between items-start mb-4">
-                                      <div className="bg-slate-800 p-2 rounded text-slate-300 group-hover:text-blue-400 transition-colors"><Icons.Briefcase/></div>
-                                  </div>
-                                  <h3 className="text-lg font-bold text-white mb-2 line-clamp-2 pr-16">{t.title}</h3>
-                                  <div className="mb-4" onClick={e => e.stopPropagation()}>
-                                      <select value={t.status || 'Nueva'} onChange={(e) => handleStatusChange(e, t, e.target.value)} className={`text-[10px] px-2 py-1 rounded font-bold uppercase outline-none border-none cursor-pointer ${t.status==='Adjudicada' ? 'bg-green-900/30 text-green-300' : t.status==='Descartada' ? 'bg-red-900/30 text-red-300' : 'bg-blue-900/30 text-blue-300'}`}>
-                                          <option value="Estudio">En Estudio</option>
-                                          <option value="Preparada">Preparada</option>
-                                          <option value="Presentada">Presentada</option>
-                                          <option value="Adjudicada">Adjudicada</option>
-                                          <option value="Descartada">Descartada</option>
-                                          <option value="Nueva">Nueva</option>
-                                      </select>
-                                      {t.statusDate && <div className="text-[10px] text-slate-500 mt-1">Modificado: {new Date(t.statusDate).toLocaleDateString()}</div>}
-                                  </div>
-                                  {t.analysis ? (<div className="space-y-1"><div className="text-xs text-slate-400 truncate"><Icons.Building size={12} className="inline mr-1"/> {t.analysis.resumen_ejecutivo?.organismo}</div><div className="text-xs text-green-400 font-mono font-bold">{formatCurrency(t.analysis.datos_economicos?.pbl_sin_iva)}</div></div>) : (<div className="text-xs text-slate-500 italic">Pendiente de análisis...</div>)}
-                                  <div className="mt-4 pt-4 border-t border-slate-700/50 flex justify-between items-center"><span className="text-[10px] text-slate-500">{new Date(t.id).toLocaleDateString()}</span><span className="text-xs text-blue-400 font-bold group-hover:translate-x-1 transition-transform">Abrir &rarr;</span></div>
-                              </div>
-                          ))}
+              return (
+                  <div className="p-6 h-full flex flex-col fade-in no-print">
+                       <div className="flex justify-between items-center mb-8">
+                          <div><h2 className="text-3xl font-display font-bold text-white tracking-tight">Expedientes</h2><p className="text-slate-400 text-sm">Gestión de licitaciones en curso</p></div>
+                          <button onClick={handleNew} className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2 shadow-lg shadow-blue-500/20"><Icons.Plus/> Nuevo Expediente</button>
                       </div>
-                  )}
-              </div>
-          );
-      };
-
-      const App = () => {
-          const [view, setView] = useState('dashboard'); 
-          const [tenders, setTenders] = useState([]);
-          const [companies, setCompanies] = useState([]);
-          const [activeTender, setActiveTender] = useState(null);
-          
-          // --- LOGICA DE LICENCIA ACTUALIZADA ---
-          // Estado booleano persistente: ¿Está registrada?
-          const [isAuth, setIsAuth] = usePersistentState('bg_app_is_registered', false);
-          // Contador persistente de pruebas
-          const [tc, setTc] = usePersistentState('bg_app_tc_st', 0); 
-          
-          const [modal, setModal] = useState({ open: false, title: '', message: '', type: '', onConfirm: null });
-          const [promptModal, setPromptModal] = useState({ open: false, title: '', message: '', placeholder: '', defaultVal: '', onConfirm: null });
-          const [apiKey] = usePersistentState('gemini_api_key', '');
-
-          useEffect(() => { const init = async () => { setTenders(await dbActions.getAll(DB_STORES.TENDERS)); setCompanies(await dbActions.getAll(DB_STORES.COMPANIES)); }; init(); }, [view]);
-
-          const showModal = (title, message, type = 'default', onConfirm = null) => { setModal({ open: true, title, message, type, onConfirm }); };
-          const showPrompt = (title, message, placeholder, defaultVal, onConfirm) => { setPromptModal({ open: true, title, message, placeholder, defaultVal, onConfirm }); };
-          
-          const handleActivate = (code) => { 
-              if(!code) return; 
-              
-              // Verificamos si la clave es correcta para el día de HOY
-              const isValidToday = _bg_check_sys(code);
-
-              if (isAuth) {
-                  // Si ya estaba registrado, comprobamos si la clave es válida de nuevo
-                  if (isValidToday) {
-                      showModal('INFO', 'La licencia es válida y correcta.', 'success');
-                  } else {
-                      // SI LA CLAVE NO ES VALIDA HOY, PERO EL USUARIO YA ESTABA REGISTRADO -> SE DESINSTALA
-                      setIsAuth(false);
-                      setTc(0);
-                      showModal('AVISO', 'La clave introducida no es válida o ha caducado. El sistema se ha desregistrado y el contador reiniciado.', 'danger');
-                  }
-              } else {
-                  // Si NO estaba registrado, intentamos registrar
-                  if(isValidToday) { 
-                      setIsAuth(true); 
-                      showModal('ACTIVACIÓN ÉXITO', 'Sistema registrado correctamente.', 'success'); 
-                  } else { 
-                      showModal('ERROR', 'Código inválido para la fecha actual.', 'danger'); 
-                  } 
-              }
-          };
-
-          const handleOpenTender = (t) => { 
-              // Si no está auth, comprobamos límite
-              if (!isAuth && tc >= 10) { 
-                  showModal('Prueba Finalizada', 'Has alcanzado el límite de 10 licitaciones en modo prueba. Por favor, activa el producto en Configuración.', 'danger', () => setView('settings')); 
-                  return; 
-              } 
-              // Si no está auth, incrementamos contador
-              if(!isAuth) {
-                  setTc(prev => prev + 1); 
-              }
-              setActiveTender(t); 
-              setView('workspace'); 
-          };
-
-          return (
-              <div className="h-full flex flex-col text-white overflow-hidden">
-                  {view !== 'workspace' && (
-                      <nav className="shrink-0 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-6 py-4 flex justify-between items-center z-20 no-print">
-                          <div><div className="text-3xl font-display font-bold tracking-tight leading-none"><span className="text-white">Boarding</span><span className="text-blue-600">Gate</span></div><div className="text-sm font-bold tracking-widest"><span className="text-white">Licitaciones</span><span className="text-green-600">Pro</span></div></div>
-                          <div className="flex bg-slate-800 rounded-lg p-1 gap-1">
-                              <button onClick={()=>setView('dashboard')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='dashboard'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Briefcase size={16}/> Licitaciones</button>
-                              <button onClick={()=>setView('companies')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='companies'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Building size={16}/> Empresas</button>
-                              <button onClick={()=>setView('settings')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='settings'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Settings size={16}/> Config</button>
+                      {tenders.length === 0 ? <div className="col-span-full text-center py-20 text-slate-500 italic">No hay licitaciones activas. Crea una nueva.</div> : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-20 custom-scrollbar">
+                              {tenders.map(t => (
+                                  <div key={t.id} onClick={()=>onOpenTender(t)} className="glass-panel p-6 rounded-2xl cursor-pointer hover:bg-slate-800/80 transition-all hover:scale-[1.01] group border-l-4 border-l-transparent hover:border-l-blue-500 relative">
+                                      <div className="absolute top-4 right-4 z-10 flex gap-2">
+                                          <button onClick={(e) => handleRenameTender(e, t)} className="p-2 bg-slate-900/80 hover:bg-slate-700 text-slate-500 hover:text-white rounded-lg border border-slate-700" title="Renombrar"><Icons.Edit size={16}/></button>
+                                          <button onClick={(e) => handleDeleteTender(e, t)} className="p-2 bg-slate-900/80 hover:bg-red-900/50 text-slate-500 hover:text-red-400 rounded-lg border border-slate-700" title="Eliminar"><Icons.Trash2 size={16}/></button>
+                                      </div>
+                                      <div className="flex justify-between items-start mb-4">
+                                          <div className="bg-slate-800 p-2 rounded text-slate-300 group-hover:text-blue-400 transition-colors"><Icons.Briefcase/></div>
+                                      </div>
+                                      <h3 className="text-lg font-bold text-white mb-2 line-clamp-2 pr-16">{t.title}</h3>
+                                      <div className="mb-4" onClick={e => e.stopPropagation()}>
+                                          <select value={t.status || 'Nueva'} onChange={(e) => handleStatusChange(e, t, e.target.value)} className={`text-[10px] px-2 py-1 rounded font-bold uppercase outline-none border-none cursor-pointer ${t.status==='Adjudicada' ? 'bg-green-900/30 text-green-300' : t.status==='Descartada' ? 'bg-red-900/30 text-red-300' : 'bg-blue-900/30 text-blue-300'}`}>
+                                              <option value="Estudio">En Estudio</option>
+                                              <option value="Preparada">Preparada</option>
+                                              <option value="Presentada">Presentada</option>
+                                              <option value="Adjudicada">Adjudicada</option>
+                                              <option value="Descartada">Descartada</option>
+                                              <option value="Nueva">Nueva</option>
+                                          </select>
+                                          {t.statusDate && <div className="text-[10px] text-slate-500 mt-1">Modificado: {new Date(t.statusDate).toLocaleDateString()}</div>}
+                                      </div>
+                                      {t.analysis ? (<div className="space-y-1"><div className="text-xs text-slate-400 truncate"><Icons.Building size={12} className="inline mr-1"/> {t.analysis.resumen_ejecutivo?.organismo}</div><div className="text-xs text-green-400 font-mono font-bold">{formatCurrency(t.analysis.datos_economicos?.pbl_sin_iva)}</div></div>) : (<div className="text-xs text-slate-500 italic">Pendiente de análisis...</div>)}
+                                      <div className="mt-4 pt-4 border-t border-slate-700/50 flex justify-between items-center"><span className="text-[10px] text-slate-500">{new Date(t.id).toLocaleDateString()}</span><span className="text-xs text-blue-400 font-bold group-hover:translate-x-1 transition-transform">Abrir &rarr;</span></div>
+                                  </div>
+                              ))}
                           </div>
-                      </nav>
-                  )}
-                  <div className="flex-1 overflow-hidden relative">
-                      {view === 'dashboard' && <Dashboard tenders={tenders} setTenders={setTenders} onOpenTender={handleOpenTender} showPrompt={showPrompt} showModal={showModal} />}
-                      {view === 'companies' && <CompanyManager companies={companies} setCompanies={setCompanies} showModal={showModal} showPrompt={showPrompt} />}
-                      {view === 'workspace' && activeTender && <Workspace tender={activeTender} onBack={()=>setView('dashboard')} apiKey={apiKey} companies={companies} showModal={showModal} showPrompt={showPrompt} />}
-                      {view === 'settings' && <SettingsTab isAuth={isAuth} trialCount={tc} onActivate={handleActivate} />}
+                      )}
                   </div>
-                  <Modal isOpen={modal.open} title={modal.title} message={modal.message} type={modal.type} onClose={() => setModal({ ...modal, open: false })} onConfirm={modal.onConfirm ? () => { modal.onConfirm(); setModal({ ...modal, open: false }); } : null}/>
-                  <PromptModal isOpen={promptModal.open} title={promptModal.title} message={promptModal.message} placeholder={promptModal.placeholder} defaultVal={promptModal.defaultVal} onClose={() => setPromptModal({ ...promptModal, open: false })} onConfirm={(val) => { promptModal.onConfirm(val); setPromptModal({ ...promptModal, open: false }); }}/>
-              </div>
-          );
-      };
+              );
+          };
 
-      createRoot(document.getElementById('root')).render(<App />);
+          const App = () => {
+              const [view, setView] = useState('dashboard'); 
+              const [tenders, setTenders] = useState([]);
+              const [companies, setCompanies] = useState([]);
+              const [activeTender, setActiveTender] = useState(null);
+              
+              // --- LOGICA DE LICENCIA ACTUALIZADA ---
+              // Estado booleano persistente: ¿Está registrada?
+              const [isAuth, setIsAuth] = usePersistentState('bg_app_is_registered', false);
+              // Contador persistente de pruebas
+              const [tc, setTc] = usePersistentState('bg_app_tc_st', 0); 
+              
+              const [modal, setModal] = useState({ open: false, title: '', message: '', type: '', onConfirm: null });
+              const [promptModal, setPromptModal] = useState({ open: false, title: '', message: '', placeholder: '', defaultVal: '', onConfirm: null });
+              const [apiKey] = usePersistentState('gemini_api_key', '');
+
+              useEffect(() => { const init = async () => { setTenders(await dbActions.getAll(DB_STORES.TENDERS)); setCompanies(await dbActions.getAll(DB_STORES.COMPANIES)); }; init(); }, [view]);
+
+              const showModal = (title, message, type = 'default', onConfirm = null) => { setModal({ open: true, title, message, type, onConfirm }); };
+              const showPrompt = (title, message, placeholder, defaultVal, onConfirm) => { setPromptModal({ open: true, title, message, placeholder, defaultVal, onConfirm }); };
+              
+              const handleActivate = (code) => { 
+                  if(!code) return; 
+                  
+                  // Verificamos si la clave es correcta para el día de HOY
+                  const isValidToday = _bg_check_sys(code);
+
+                  if (isAuth) {
+                      // Si ya estaba registrado, comprobamos si la clave es válida de nuevo
+                      if (isValidToday) {
+                          showModal('INFO', 'La licencia es válida y correcta.', 'success');
+                      } else {
+                          // SI LA CLAVE NO ES VALIDA HOY, PERO EL USUARIO YA ESTABA REGISTRADO -> SE DESINSTALA
+                          setIsAuth(false);
+                          setTc(0);
+                          showModal('AVISO', 'La clave introducida no es válida o ha caducado. El sistema se ha desregistrado y el contador reiniciado.', 'danger');
+                      }
+                  } else {
+                      // Si NO estaba registrado, intentamos registrar
+                      if(isValidToday) { 
+                          setIsAuth(true); 
+                          showModal('ACTIVACIÓN ÉXITO', 'Sistema registrado correctamente.', 'success'); 
+                      } else { 
+                          showModal('ERROR', 'Código inválido para la fecha actual.', 'danger'); 
+                      } 
+                  }
+              };
+
+              const handleOpenTender = (t) => { 
+                  // Si no está auth, comprobamos límite
+                  if (!isAuth && tc >= 10) { 
+                      showModal('Prueba Finalizada', 'Has alcanzado el límite de 10 licitaciones en modo prueba. Por favor, activa el producto en Configuración.', 'danger', () => setView('settings')); 
+                      return; 
+                  } 
+                  // Si no está auth, incrementamos contador
+                  if(!isAuth) {
+                      setTc(prev => prev + 1); 
+                  }
+                  setActiveTender(t); 
+                  setView('workspace'); 
+              };
+
+              return (
+                  <div className="h-full flex flex-col text-white overflow-hidden">
+                      {view !== 'workspace' && (
+                          <nav className="shrink-0 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-6 py-4 flex justify-between items-center z-20 no-print">
+                              <div><div className="text-3xl font-display font-bold tracking-tight leading-none"><span className="text-white">Boarding</span><span className="text-blue-600">Gate</span></div><div className="text-sm font-bold tracking-widest"><span className="text-white">Licitaciones</span><span className="text-green-600">Pro</span></div></div>
+                              <div className="flex bg-slate-800 rounded-lg p-1 gap-1">
+                                  <button onClick={()=>setView('dashboard')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='dashboard'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Briefcase size={16}/> Licitaciones</button>
+                                  <button onClick={()=>setView('companies')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='companies'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Building size={16}/> Empresas</button>
+                                  <button onClick={()=>setView('settings')} className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-2 ${view==='settings'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}><Icons.Settings size={16}/> Config</button>
+                              </div>
+                          </nav>
+                      )}
+                      <div className="flex-1 overflow-hidden relative">
+                          {view === 'dashboard' && <Dashboard tenders={tenders} setTenders={setTenders} onOpenTender={handleOpenTender} showPrompt={showPrompt} showModal={showModal} />}
+                          {view === 'companies' && <CompanyManager companies={companies} setCompanies={setCompanies} showModal={showModal} showPrompt={showPrompt} />}
+                          {view === 'workspace' && activeTender && <Workspace tender={activeTender} onBack={()=>setView('dashboard')} apiKey={apiKey} companies={companies} showModal={showModal} showPrompt={showPrompt} />}
+                          {view === 'settings' && <SettingsTab isAuth={isAuth} trialCount={tc} onActivate={handleActivate} />}
+                      </div>
+                      <Modal isOpen={modal.open} title={modal.title} message={modal.message} type={modal.type} onClose={() => setModal({ ...modal, open: false })} onConfirm={modal.onConfirm ? () => { modal.onConfirm(); setModal({ ...modal, open: false }); } : null}/>
+                      <PromptModal isOpen={promptModal.open} title={promptModal.title} message={promptModal.message} placeholder={promptModal.placeholder} defaultVal={promptModal.defaultVal} onClose={() => setPromptModal({ ...promptModal, open: false })} onConfirm={(val) => { promptModal.onConfirm(val); setPromptModal({ ...promptModal, open: false }); }}/>
+                  </div>
+              );
+          };
+
+          createRoot(document.getElementById('root')).render(<App />);
     </script>
 </body>
 </html>
