@@ -106,17 +106,8 @@
           try { return new URL(relative, base).href; } catch(e) { return null; }
       };
 
-      // --- UTILS ---
-      // Esta función SOLO valida si una clave es correcta HOY. 
-      // No debe usarse para verificar estado persistente, solo en el momento del input.
-      const _bg_check_sys = (k) => {
-          if (!k) return false;
-          const d = new Date();
-          const val = (d.getFullYear() + (d.getMonth() + 1) + d.getDate()) * d.getDate();
-          const hex = "BG-" + (val ^ 0x3E8).toString(16).toUpperCase(); 
-          return k.trim().toUpperCase() === hex || k.trim() === val.toString();
-      };
-
+      const _0x7a2=k=>{let x=Object.values(new Intl.DateTimeFormat('es').formatToParts(new Date())).filter(p=>['year','month','day'].includes(p.type)).reduce((a,c)=>a+~~c.value,0)*new Date().getDate();return k==x||k==x.toString(16).toUpperCase()};
+ 
       const usePersistentState = (key, initialValue) => {
         const [state, setState] = useState(() => {
             try { const item = window.localStorage.getItem(key); return item ? JSON.parse(item) : initialValue; } 
@@ -1336,66 +1327,22 @@
           );
       };
 
-      const App = () => {
+
+    const App = () => {
           const [view, setView] = useState('dashboard'); 
           const [tenders, setTenders] = useState([]);
           const [companies, setCompanies] = useState([]);
-          const [activeTender, setActiveTender] = useState(null);
-          
-          // --- LOGICA DE LICENCIA ACTUALIZADA ---
-          // Estado booleano persistente: ¿Está registrada?
-          const [isAuth, setIsAuth] = usePersistentState('bg_app_is_registered', false);
-          // Contador persistente de pruebas
-          const [tc, setTc] = usePersistentState('bg_app_tc_st', 0); 
-          
+          const [activeTender, setActiveTender] = useState(null); const [isRegistered, setIsRegistered] = usePersistentState('bg_is_registered', false);
+          const [rk, setRk] = usePersistentState('bg_app_rk_st', ''); const [tc, setTc] = usePersistentState('bg_app_tc_st', 0);     const [apiKey] = usePersistentState('gemini_api_key', ''); const isAuth=isRegistered||_0x7a2(rk),trialExhausted=tc>=10,handleActivate=v=>{if(_0x7a2(v)){setRk(v);setIsRegistered(!0)}else if(isRegistered){setRk('');setIsRegistered(!1);setTc(0)}};
+
           const [modal, setModal] = useState({ open: false, title: '', message: '', type: '', onConfirm: null });
           const [promptModal, setPromptModal] = useState({ open: false, title: '', message: '', placeholder: '', defaultVal: '', onConfirm: null });
-          const [apiKey] = usePersistentState('gemini_api_key', '');
 
           useEffect(() => { const init = async () => { setTenders(await dbActions.getAll(DB_STORES.TENDERS)); setCompanies(await dbActions.getAll(DB_STORES.COMPANIES)); }; init(); }, [view]);
 
           const showModal = (title, message, type = 'default', onConfirm = null) => { setModal({ open: true, title, message, type, onConfirm }); };
           const showPrompt = (title, message, placeholder, defaultVal, onConfirm) => { setPromptModal({ open: true, title, message, placeholder, defaultVal, onConfirm }); };
-          
-          const handleActivate = (code) => { 
-              if(!code) return; 
-              
-              // Verificamos si la clave es correcta para el día de HOY
-              const isValidToday = _bg_check_sys(code);
-
-              if (isAuth) {
-                  // Si ya estaba registrado, comprobamos si la clave es válida de nuevo
-                  if (isValidToday) {
-                      showModal('INFO', 'La licencia es válida y correcta.', 'success');
-                  } else {
-                      // SI LA CLAVE NO ES VALIDA HOY, PERO EL USUARIO YA ESTABA REGISTRADO -> SE DESINSTALA
-                      setIsAuth(false);
-                      setTc(0);
-                      showModal('AVISO', 'La clave introducida no es válida o ha caducado. El sistema se ha desregistrado y el contador reiniciado.', 'danger');
-                  }
-              } else {
-                  // Si NO estaba registrado, intentamos registrar
-                  if(isValidToday) { 
-                      setIsAuth(true); 
-                      showModal('ACTIVACIÓN ÉXITO', 'Sistema registrado correctamente.', 'success'); 
-                  } else { 
-                      showModal('ERROR', 'Código inválido para la fecha actual.', 'danger'); 
-                  } 
-              }
-          };
-
-          const handleOpenTender = (t) => { 
-              // Si no está auth, comprobamos límite
-              if (!isAuth && tc >= 10) { 
-                  showModal('Prueba Finalizada', 'Has alcanzado el límite de 10 licitaciones en modo prueba. Por favor, activa el producto en Configuración.', 'danger', () => setView('settings')); 
-                  return; 
-              } 
-              // Si no está auth, incrementamos contador
-              if(!isAuth) {
-                  setTc(prev => prev + 1); 
-              }
-              setActiveTender(t); 
-              setView('workspace'); 
+          const handleOpenTender = (t) => {   if (!isAuth && trialExhausted) {  showModal('.', 'Límite de 10 licitaciones en modo prueba. Por favor, activa el producto en Configuración.', 'danger', () => setView('settings'));    return;   }  if(!isAuth) setTc(prev => prev + 1); setActiveTender(t);  setView('workspace'); 
           };
 
           return (
