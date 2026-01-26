@@ -191,12 +191,18 @@
           });
       };
       
+
       const dbActions = {
           put: async (store, key, val) => {
               const db = await openDB();
               return new Promise((res, rej) => {
                   const tx = db.transaction(store, 'readwrite');
-                  store === DB_STORES.TENDERS || store === DB_STORES.COMPANIES ? tx.objectStore(store).put(val) : tx.objectStore(store).put(val, key);
+                  // Si store es FILES, necesitamos key obligatoria. En TENDERS/COMPANIES la key está en el objeto (keyPath)
+                  if (store === DB_STORES.FILES) {
+                      tx.objectStore(store).put(val, key);
+                  } else {
+                      tx.objectStore(store).put(val);
+                  }
                   tx.oncomplete = () => res(); tx.onerror = rej;
               });
           },
@@ -221,6 +227,33 @@
                  tx.objectStore(store).delete(key);
                  tx.oncomplete = res;
              });
+          },
+          // NUEVO: Obtener todas las claves y valores (necesario para FILES que no guardan la key dentro del objeto)
+          exportStore: async (store) => {
+              const db = await openDB();
+              return new Promise((res) => {
+                  const tx = db.transaction(store, 'readonly');
+                  const request = tx.objectStore(store).openCursor();
+                  const items = [];
+                  request.onsuccess = (e) => {
+                      const cursor = e.target.result;
+                      if (cursor) {
+                          items.push({ key: cursor.key, value: cursor.value });
+                          cursor.continue();
+                      } else {
+                          res(items);
+                      }
+                  };
+              });
+          },
+          // NUEVO: Limpiar una tienda completa
+          clearStore: async (store) => {
+              const db = await openDB();
+              return new Promise((res) => {
+                  const tx = db.transaction(store, 'readwrite');
+                  tx.objectStore(store).clear();
+                  tx.oncomplete = res;
+              });
           }
       };
 
@@ -419,6 +452,10 @@
           const [testStatus, setTestStatus] = useState(null); 
           const [errorDetail, setErrorDetail] = useState('');
           const [localLic, setLocalLic] = useState('');
+          
+          // Estados para Backup
+          const [backupStatus, setBackupStatus] = useState('idle'); // idle, processing, success, error
+          const [backupMsg, setBackupMsg] = useState('');
 
           const testConnection = async () => {
               if(!apiKey) return alert("Introduce una clave primero.");
@@ -435,8 +472,163 @@
               } catch(e) { setTestStatus('error'); setErrorDetail(e.message); }
           };
 
+          // --- LÓGICA DE EXPORTACIÓN ---
+          const blobToBase64 = (blob) => {
+              return new Promise((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(blob);
+              });
+          };
+
+          const handleExport = async () => {
+              if(!confirm("Se va a generar un archivo de copia de seguridad con TODOS tus datos (incluidos los PDFs). Esto puede tardar unos segundos si tienes muchos archivos. ¿Continuar?")) return;
+              
+              setBackupStatus('processing');
+              setBackupMsg('Leyendo base de datos local...');
+              
+              try {
+                  // 1. Exportar LocalStorage
+                  const lsData = {
+                      gemini_api_key: window.localStorage.getItem('gemini_api_key'),
+                      gemini_model: window.localStorage.getItem('gemini_model'),
+                      bg_is_registered: window.localStorage.getItem('bg_is_registered'),
+                      bg_app_rk_st: window.localStorage.getItem('bg_app_rk_st'),
+                      last_selected_company: window.localStorage.getItem('last_selected_company')
+                  };
+
+                  // 2. Exportar IndexedDB
+                  setBackupMsg('Procesando Expedientes y Empresas...');
+                  const tenders = await dbActions.exportStore(DB_STORES.TENDERS); // Array of {key, value}
+                  const companies = await dbActions.exportStore(DB_STORES.COMPANIES);
+                  
+                  setBackupMsg('Serializando Documentos (Esto puede tardar)...');
+                  const rawFiles = await dbActions.exportStore(DB_STORES.FILES);
+                  
+                  // Convertir Blobs a Base64
+                  const filesPromises = rawFiles.map(async (item) => {
+                      // Si es un Blob (PDF/Img), convertir. Si es objeto plano (no debería), dejarlo.
+                      if (item.value instanceof Blob) {
+                          const b64 = await blobToBase64(item.value);
+                          return { key: item.key, value: b64, isBlob: true, type: item.value.type };
+                      }
+                      return item; // Probablemente no ocurra, pero por seguridad
+                  });
+                  
+                  const serializedFiles = await Promise.all(filesPromises);
+
+                  // 3. Empaquetar
+                  const backupObject = {
+                      version: "2.5",
+                      timestamp: new Date().toISOString(),
+                      localStorage: lsData,
+                      db: {
+                          tenders: tenders.map(t => t.value), // Tenders guarda la key dentro del objeto
+                          companies: companies.map(c => c.value),
+                          files: serializedFiles
+                      }
+                  };
+
+                  // 4. Descargar
+                  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupObject));
+                  const downloadAnchorNode = document.createElement('a');
+                  downloadAnchorNode.setAttribute("href", dataStr);
+                  downloadAnchorNode.setAttribute("download", `LicitacionesPro_Backup_${new Date().toISOString().slice(0,10)}.json`);
+                  document.body.appendChild(downloadAnchorNode);
+                  downloadAnchorNode.click();
+                  downloadAnchorNode.remove();
+
+                  setBackupStatus('success');
+                  setBackupMsg('Copia de seguridad descargada correctamente.');
+                  setTimeout(() => setBackupStatus('idle'), 5000);
+
+              } catch (e) {
+                  console.error(e);
+                  setBackupStatus('error');
+                  setBackupMsg('Error al exportar: ' + e.message);
+              }
+          };
+
+          // --- LÓGICA DE IMPORTACIÓN ---
+          const handleImport = async (e) => {
+              const file = e.target.files[0];
+              if(!file) return;
+
+              if(!confirm("⚠️ ATENCIÓN: Al importar una copia de seguridad, SE BORRARÁN todos los datos actuales (Expedientes y Configuración) y se reemplazarán por los de la copia.\n\n¿Estás seguro de continuar?")) {
+                  e.target.value = null; 
+                  return;
+              }
+
+              setBackupStatus('processing');
+              setBackupMsg('Leyendo archivo de respaldo...');
+
+              const reader = new FileReader();
+              reader.onload = async (event) => {
+                  try {
+                      const backupData = JSON.parse(event.target.result);
+                      
+                      if(!backupData.db || !backupData.localStorage) throw new Error("Formato de archivo inválido");
+
+                      setBackupMsg('Limpiando base de datos actual...');
+                      
+                      // 1. Limpiar DB
+                      await dbActions.clearStore(DB_STORES.TENDERS);
+                      await dbActions.clearStore(DB_STORES.COMPANIES);
+                      await dbActions.clearStore(DB_STORES.FILES);
+
+                      // 2. Restaurar LocalStorage
+                      setBackupMsg('Restaurando configuración...');
+                      Object.keys(backupData.localStorage).forEach(k => {
+                          if(backupData.localStorage[k]) window.localStorage.setItem(k, backupData.localStorage[k]);
+                      });
+                      
+                      // Actualizar estado local del componente para reflejar cambios visuales inmediatos
+                      if(backupData.localStorage.gemini_api_key) {
+                           setApiKey(JSON.parse(backupData.localStorage.gemini_api_key));
+                      }
+
+                      // 3. Restaurar DB
+                      setBackupMsg('Restaurando Expedientes y Empresas...');
+                      // Tenders
+                      for(const t of backupData.db.tenders) {
+                          await dbActions.put(DB_STORES.TENDERS, null, t);
+                      }
+                      // Companies
+                      for(const c of backupData.db.companies) {
+                          await dbActions.put(DB_STORES.COMPANIES, null, c);
+                      }
+
+                      // Files
+                      setBackupMsg('Reconstruyendo archivos (Esto puede tardar)...');
+                      for(const f of backupData.db.files) {
+                          if (f.isBlob) {
+                              // Convertir Base64 DataURI a Blob
+                              const res = await fetch(f.value);
+                              const blob = await res.blob();
+                              await dbActions.put(DB_STORES.FILES, f.key, blob);
+                          } else {
+                              await dbActions.put(DB_STORES.FILES, f.key, f.value);
+                          }
+                      }
+
+                      setBackupStatus('success');
+                      setBackupMsg('Restauración completada. La página se recargará en 3 segundos...');
+                      setTimeout(() => window.location.reload(), 3000);
+
+                  } catch (err) {
+                      console.error(err);
+                      setBackupStatus('error');
+                      setBackupMsg('Error crítico al importar: ' + err.message);
+                  }
+              };
+              reader.readAsText(file);
+          };
+
+
           return (
               <div className="h-full p-6 flex flex-col items-center justify-start fade-in overflow-y-auto no-print">
+                  {/* SECCION API (Sin cambios visuales mayores) */}
                   <div className="max-w-2xl w-full bg-slate-900/80 border border-slate-800 rounded-2xl p-8 shadow-2xl mb-8">
                       <div className="flex items-center gap-4 mb-6 border-b border-slate-700 pb-4">
                           <div className="p-3 bg-purple-500/20 rounded-xl text-purple-400"><Icons.BrainCircuit size={32} /></div>
@@ -461,237 +653,69 @@
                               </div>
                               {testStatus === 'error' && <div className="mt-4 p-4 bg-red-900/30 border border-red-500/50 rounded-xl text-red-200 text-xs font-mono whitespace-pre-wrap">{errorDetail}</div>}
                           </div>
-
-                          {/* SECCION AYUDA ACTUALIZADA ESTILO IMAGEN */}
+                          
                           <div className="bg-blue-900/10 border border-blue-500/30 rounded-xl p-6 mt-4">
-                              <h4 className="text-blue-400 font-bold text-base mb-4 flex items-center gap-2">
-                                  <Icons.HelpCircle size={20}/> ¿Cómo obtener la API Key?
-                              </h4>
-                              <ol className="text-sm text-slate-300 space-y-3 list-decimal pl-5 mb-6 leading-relaxed">
-                                  <li>Accede a <strong className="text-white">Google AI Studio</strong> con tu cuenta de Google (botón abajo).</li>
-                                  <li>Si es tu primera vez, acepta los términos de uso.</li>
-                                  <li>Haz clic en el botón azul <strong className="text-white">"Get API key"</strong> en la esquina superior izquierda.</li>
-                                  <li>En el cuadro emergente, haz clic en <strong className="text-white">"Create API key in new project"</strong>.</li>
-                                  <li>Se generará una clave API. Cópiala.</li>
-                                  <li>Vuelve aquí y <strong className="text-white">pega la clave en el campo "Google Gemini API Key"</strong> de este formulario.</li>
-                              </ol>
-                              <a href="https://aistudio.google.com/app/apikey" target="_blank" className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl text-sm font-bold transition-colors shadow-lg shadow-blue-900/20 w-full justify-center md:w-auto">
-                                  <Icons.ExternalLink size={18}/> Ir a Google AI Studio
-                              </a>
+                              <h4 className="text-blue-400 font-bold text-base mb-2 flex items-center gap-2"> <Icons.HelpCircle size={20}/> ¿Cómo obtener la API Key? </h4>
+                              <p className="text-sm text-slate-400 mb-4">Necesitas una clave gratuita de Google AI Studio para que la IA funcione.</p>
+                              <a href="https://aistudio.google.com/app/apikey" target="_blank" className="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors border border-slate-600"><Icons.ExternalLink size={16}/> Obtener Clave en Google</a>
                           </div>
                       </div>
                   </div>
+
+                  {/* NUEVA SECCIÓN: GESTIÓN DE DATOS */}
+                  <div className="max-w-2xl w-full bg-slate-900/80 border border-slate-800 rounded-2xl p-8 shadow-2xl mb-8">
+                      <div className="flex items-center gap-4 mb-6 border-b border-slate-700 pb-4">
+                          <div className="p-3 bg-amber-500/20 rounded-xl text-amber-400"><Icons.Archive size={32} /></div>
+                          <div><h2 className="text-2xl font-bold text-white">Copias de Seguridad</h2><p className="text-slate-400 text-sm">Exporta o importa la caché completa (Datos + Documentos)</p></div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <button onClick={handleExport} disabled={backupStatus === 'processing'} className="bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl p-6 text-left transition-all hover:border-blue-500 group">
+                              <div className="bg-blue-600 w-10 h-10 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><Icons.Download className="text-white"/></div>
+                              <h4 className="font-bold text-white mb-1">Exportar Copia</h4>
+                              <p className="text-xs text-slate-400">Descarga un archivo .json con todos tus expedientes, empresas y PDFs. Ideal para backups.</p>
+                          </button>
+
+                          <label className={`bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl p-6 text-left transition-all hover:border-green-500 group cursor-pointer ${backupStatus === 'processing' ? 'opacity-50 pointer-events-none' : ''}`}>
+                              <div className="bg-green-600 w-10 h-10 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><Icons.Upload className="text-white"/></div>
+                              <h4 className="font-bold text-white mb-1">Restaurar Copia</h4>
+                              <p className="text-xs text-slate-400">Recupera tus datos desde un archivo. <strong>Atención: Sobrescribirá los datos actuales.</strong></p>
+                              <input type="file" accept=".json" className="hidden" onChange={handleImport} disabled={backupStatus === 'processing'} />
+                          </label>
+                      </div>
+
+                      {backupStatus !== 'idle' && (
+                          <div className={`mt-6 p-4 rounded-xl border flex items-center gap-3 ${backupStatus === 'error' ? 'bg-red-900/20 border-red-500 text-red-300' : backupStatus === 'success' ? 'bg-green-900/20 border-green-500 text-green-300' : 'bg-blue-900/20 border-blue-500 text-blue-300'}`}>
+                              {backupStatus === 'processing' && <Icons.Loader className="animate-spin shrink-0"/>}
+                              {backupStatus === 'success' && <Icons.CheckCircle className="shrink-0"/>}
+                              {backupStatus === 'error' && <Icons.AlertTriangle className="shrink-0"/>}
+                              <span className="text-sm font-mono">{backupMsg}</span>
+                          </div>
+                      )}
+                  </div>
                   
-                  {/* SECCION REGISTRO APP (Sin cambios en lógica, solo visualización) */}
+                  {/* SECCION REGISTRO APP */}
                   <div className="max-w-2xl w-full bg-slate-900/80 border border-slate-800 rounded-2xl p-8 shadow-2xl mb-20">
                       <div className="flex items-center gap-4 mb-6 border-b border-slate-700 pb-4">
                           <div className={`p-3 rounded-xl ${isAuth ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'}`}><Icons.CheckCircle size={32} /></div>
-                          <div><h2 className="text-2xl font-bold text-white">Registro de la aplicación</h2><p className="text-slate-400 text-sm">Estado de la instalación y licencia</p></div>
+                          <div><h2 className="text-2xl font-bold text-white">Licencia</h2><p className="text-slate-400 text-sm">Estado de la instalación</p></div>
                       </div>
                       <div className="space-y-6">
-                          <p className="text-sm text-slate-400 leading-relaxed italic">Esta plataforma es un proyecto independiente que se sustenta exclusivamente mediante un modelo de <strong>crowdfunding</strong> y las aportaciones directas de sus usuarios.</p>
                           <div className="bg-black/30 border border-slate-700 rounded-xl p-5">
-                              <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Número de Registro / Código de Instalación</label>
+                              <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Código de Registro</label>
                               <div className="flex gap-3">
                                   <input type="text" value={localLic} onChange={(e) => setLocalLic(e.target.value.toUpperCase())} placeholder="BG-XXXX-XXXX" className={`flex-1 bg-slate-900 border ${isAuth ? 'border-green-600' : 'border-slate-600'} rounded-lg p-3 text-white font-mono focus:outline-none`}/>
                                   <button onClick={() => { onActivate(localLic); setLocalLic(''); }} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-xs">VERIFICAR</button>
                               </div>
-                              {isAuth && <div className="mt-3 text-center text-green-400 text-xs font-bold uppercase tracking-widest flex justify-center items-center gap-2"><Icons.Check size={14}/> Licencia Activa - Dispositivo Registrado</div>}
+                              {isAuth && <div className="mt-3 text-center text-green-400 text-xs font-bold uppercase tracking-widest flex justify-center items-center gap-2"><Icons.Check size={14}/> Licencia Activa</div>}
                           </div>
-                          {!isAuth && (
-                              <div className="flex justify-between items-center bg-blue-900/10 border border-blue-500/30 rounded-xl p-4">
-                                  <div className="text-sm text-blue-200">Periodo de cortesía consumido: <span className="font-bold ml-1">{trialCount} de 10 licitaciones</span></div>
-                                  <div className="w-24 h-2 bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-blue-500" style={{width: `${(Math.min(trialCount,10)/10)*100}%`}}></div></div>
-                              </div>
-                          )}
-                          <div className="text-center bg-slate-800/50 p-4 rounded-xl"><p className="text-xs text-slate-400 mb-2">Para obtener tu Nº de registro o colaborar con el crowdfunding:</p><a href="https://x.com/BoardingGate" target="_blank" className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 font-bold transition-colors"><Icons.Globe size={16}/> @BoardingGate en X (Twitter)</a></div>
                       </div>
                   </div>
               </div>
           );
       };
 
-    
-      const CompanyManager = ({ companies, setCompanies, showModal, showPrompt }) => {
-          const [mode, setMode] = useState('list'); 
-          const [form, setForm] = useState(null);
-          const [processing, setProcessing] = useState(false);
-          const [logoPreview, setLogoPreview] = useState(null);
-          const [targetEnv, setTargetEnv] = useState('A'); 
 
-          const defaultCompany = { id: null, name: '', cif: '', address: '', repName: '', repDni: '', notary: '', registryData: '', classification: '', recurringDocs: [], logoId: null };
-
-          const handleEdit = async (c) => { 
-              setForm(c || { ...defaultCompany, id: Date.now() }); 
-              setMode('edit'); 
-              if(c && c.logoId) {
-                  const blob = await dbActions.get(DB_STORES.FILES, c.logoId);
-                  if(blob) setLogoPreview(URL.createObjectURL(blob));
-                  else setLogoPreview(null);
-              } else { setLogoPreview(null); }
-          };
-          
-          const handleSave = async () => {
-              if(!form.name) { showModal('Error', 'El nombre es obligatorio', 'danger'); return; }
-              const newC = { ...form, id: form.id || Date.now() };
-              await dbActions.put(DB_STORES.COMPANIES, null, newC);
-              setCompanies(await dbActions.getAll(DB_STORES.COMPANIES));
-              setMode('list');
-          };
-
-          const handleDeleteRequest = (id) => {
-              showModal('¿Eliminar empresa?', 'Se perderán todos los datos y documentos asociados.', 'danger', async () => {
-                  await dbActions.del(DB_STORES.COMPANIES, id);
-                  setCompanies(await dbActions.getAll(DB_STORES.COMPANIES));
-              });
-          };
-
-          const handleUploadDoc = async (e) => {
-              const file = e.target.files[0];
-              if(!file) return;
-              setProcessing(true);
-              const fileId = `doc_${Date.now()}`;
-              await dbActions.put(DB_STORES.FILES, fileId, file); 
-              setForm(prev => ({ 
-                  ...prev, 
-                  recurringDocs: [...prev.recurringDocs, { name: file.name, fileId, fileName: file.name, targetEnvelope: targetEnv, type: 'file' }] 
-              }));
-              setProcessing(false);
-          };
-
-          const handleAddUrl = () => {
-              showPrompt('Añadir Enlace Web', 'Introduce la URL del documento (Drive, Dropbox, etc):', 'https://...', null, (url) => {
-                  if (!url) return;
-                  setForm(prev => ({
-                      ...prev,
-                      recurringDocs: [...prev.recurringDocs, { name: "Enlace Web: " + url.substring(0,20) + "...", fileId: `url_${Date.now()}`, fileName: url, targetEnvelope: targetEnv, type: 'url', url: url }]
-                  }));
-              });
-          };
-
-          const handleLogoUpload = async (e) => {
-              const file = e.target.files[0];
-              if(!file) return;
-              const logoId = `logo_${Date.now()}`;
-              await dbActions.put(DB_STORES.FILES, logoId, file);
-              setLogoPreview(URL.createObjectURL(file));
-              setForm(prev => ({ ...prev, logoId }));
-          };
-          
-          const removeLogo = async () => {
-              if(form.logoId) { await dbActions.del(DB_STORES.FILES, form.logoId); setLogoPreview(null); setForm(prev => ({ ...prev, logoId: null })); }
-          };
-
-          const removeDoc = async (idx) => {
-              const doc = form.recurringDocs[idx];
-              if(doc.type !== 'url') await dbActions.del(DB_STORES.FILES, doc.fileId);
-              const newDocs = form.recurringDocs.filter((_, i) => i !== idx);
-              setForm({...form, recurringDocs: newDocs});
-          };
-
-          if(mode === 'edit') return (
-              <div className="p-6 h-full overflow-y-auto no-print">
-                  <div className="max-w-4xl mx-auto glass-panel p-8 rounded-2xl">
-                      <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
-                          <h2 className="text-2xl font-display font-bold text-white flex items-center gap-2"><Icons.Building className="text-blue-500"/> {form.id ? 'Editar Empresa' : 'Nueva Empresa'}</h2>
-                          <button onClick={() => setMode('list')} className="text-sm text-slate-400 hover:text-white">Cancelar</button>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                          <div className="md:col-span-2 flex items-center gap-4 bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-                              <div className="w-16 h-16 rounded bg-slate-900 border border-slate-600 flex items-center justify-center overflow-hidden relative group">
-                                  {logoPreview ? <img src={logoPreview} alt="Logo" className="w-full h-full object-contain" /> : <Icons.Image className="text-slate-600"/>}
-                              </div>
-                              <div className="flex-1">
-                                  <label className="text-xs font-bold text-slate-300 block mb-1">Logotipo</label>
-                                  <div className="flex gap-2">
-                                      <label className="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded text-xs text-white cursor-pointer inline-flex items-center gap-2 transition-colors"><Icons.Upload size={12}/> Subir<input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} /></label>
-                                      {form.logoId && <button onClick={removeLogo} className="bg-red-900/20 hover:bg-red-900/40 text-red-400 px-3 py-1 rounded text-xs flex items-center gap-2"><Icons.Trash2 size={12}/> Eliminar</button>}
-                                  </div>
-                              </div>
-                          </div>
-                          <div><label className="text-xs text-slate-400 font-bold mb-1 block">Razón Social</label><input className="input-std" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} placeholder="Construcciones S.L." /></div>
-                          <div><label className="text-xs text-slate-400 font-bold mb-1 block">CIF / NIF</label><input className="input-std" value={form.cif} onChange={e=>setForm({...form, cif:e.target.value})} placeholder="B-12345678" /></div>
-                          <div className="md:col-span-2"><label className="text-xs text-slate-400 font-bold mb-1 block">Domicilio Social</label><input className="input-std" value={form.address} onChange={e=>setForm({...form, address:e.target.value})} placeholder="C/ Mayor, 1, Madrid" /></div>
-                          <div><label className="text-xs text-slate-400 font-bold mb-1 block">Representante Legal</label><input className="input-std" value={form.repName} onChange={e=>setForm({...form, repName:e.target.value})} /></div>
-                          <div><label className="text-xs text-slate-400 font-bold mb-1 block">DNI Representante</label><input className="input-std" value={form.repDni} onChange={e=>setForm({...form, repDni:e.target.value})} /></div>
-                          <div className="md:col-span-2"><label className="text-xs text-slate-400 font-bold mb-1 block">Datos Notariales</label><textarea className="input-std h-20" value={form.notary} onChange={e=>setForm({...form, notary:e.target.value})} placeholder="Ante D. ..., Notario de ..., nº protocolo..." /></div>
-                          <div className="md:col-span-2"><label className="text-xs text-slate-400 font-bold mb-1 block">Datos Registrales</label><input className="input-std" value={form.registryData} onChange={e=>setForm({...form, registryData:e.target.value})} placeholder="Tomo X, Libro Y, Folio Z..." /></div>
-                          <div className="md:col-span-2 p-4 bg-blue-900/10 border border-blue-500/30 rounded-xl">
-                             <label className="text-sm text-blue-400 font-bold mb-2 block flex items-center gap-2"><Icons.CheckCircle size={16}/> Clasificación de Contratista</label>
-                             <input className="input-std bg-slate-900/50" value={form.classification} onChange={e=>setForm({...form, classification:e.target.value})} placeholder="Ej: Grupo C, Subgrupo 02, Categoría 4 (C-02-4)" />
-                          </div>
-                      </div>
-                      <div className="glass-panel p-6 rounded-xl mb-8 border-dashed border-slate-600">
-                          <div className="flex justify-between items-center mb-4">
-                              <h3 className="text-sm font-bold text-white flex items-center gap-2"><Icons.FileText/> Documentación Recurrente</h3>
-                              <div className="flex gap-2 items-center">
-                                  <select className="bg-slate-800 border border-slate-600 text-xs text-white rounded px-2 py-1 outline-none mr-2" value={targetEnv} onChange={e=>setTargetEnv(e.target.value)}>
-                                      <option value="A">Sobre A</option>
-                                      <option value="B">Sobre B</option>
-                                      <option value="C">Sobre C</option>
-                                  </select>
-                                  <button onClick={handleAddUrl} className="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-xs flex items-center gap-2 text-white border border-slate-500"><Icons.Link size={14}/> URL</button>
-                                  <label className="btn-primary px-3 py-1.5 rounded text-xs cursor-pointer flex items-center gap-2">
-                                      {processing ? <Icons.Loader size={14}/> : <Icons.Upload size={14}/>} Añadir PDF
-                                      <input type="file" accept="application/pdf" className="hidden" onChange={handleUploadDoc} disabled={processing}/>
-                                  </label>
-                              </div>
-                          </div>
-                          <div className="space-y-2">
-                              {form.recurringDocs.map((doc, i) => (
-                                  <div key={i} className="flex items-center justify-between bg-slate-800 p-2 rounded border border-slate-700">
-                                      <div className="flex items-center gap-3">
-                                          <div className="bg-red-500/20 p-1.5 rounded text-red-400">{doc.type==='url'?<Icons.Link size={16}/>:<Icons.FileText size={16}/>}</div>
-                                          <div>
-                                              <div className="text-sm font-bold text-slate-200">{doc.name}</div>
-                                              <div className="text-[10px] text-slate-500">{doc.fileName} <span className="text-blue-400 ml-2">→ Sobre {doc.targetEnvelope || 'A'}</span></div>
-                                          </div>
-                                      </div>
-                                      <button onClick={()=>removeDoc(i)} className="text-slate-500 hover:text-red-400 p-2"><Icons.Trash2 size={16}/></button>
-                                  </div>
-                              ))}
-                          </div>
-                      </div>
-                      <div className="flex gap-4"><button onClick={handleSave} className="flex-1 btn-primary py-3 rounded-xl shadow-lg shadow-blue-900/20">GUARDAR EMPRESA</button></div>
-                  </div>
-              </div>
-          );
-
-          return (
-              <div className="p-6 h-full flex flex-col no-print">
-                  <div className="flex justify-between items-center mb-8">
-                      <h2 className="text-3xl font-display font-bold text-white tracking-tight">Mis Empresas</h2>
-                      <button onClick={()=>handleEdit(null)} className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2 shadow-lg"><Icons.Plus/> Nueva Empresa</button>
-                  </div>
-                  {companies && companies.length > 0 ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-20">
-                          {companies.map(c => (
-                              <div key={c.id} className="glass-panel p-6 rounded-2xl group relative hover:border-blue-500/50 transition-colors">
-                                  <div className="flex justify-between items-start mb-4">
-                                      <div className="p-3 bg-blue-500/10 rounded-xl text-blue-400"><Icons.Building size={24}/></div>
-                                      <div className="flex gap-2 opacity-100 transition-opacity">
-                                          <button onClick={()=>handleEdit(c)} className="p-2 hover:bg-slate-700 rounded text-blue-300"><Icons.Settings size={16}/></button>
-                                          <button onClick={()=>handleDeleteRequest(c.id)} className="p-2 hover:bg-slate-700 rounded text-red-400"><Icons.Trash2 size={16}/></button>
-                                      </div>
-                                  </div>
-                                  <h3 className="text-xl font-bold text-white mb-1 truncate">{c.name}</h3>
-                                  <p className="text-xs text-slate-400 mb-4 font-mono">{c.cif}</p>
-                                  <div className="space-y-2">
-                                      <div className="text-xs bg-slate-800/50 p-2 rounded flex justify-between"><span>Clasificación:</span> <span className="text-white font-bold">{c.classification || '-'}</span></div>
-                                      <div className="text-xs bg-slate-800/50 p-2 rounded flex justify-between"><span>Docs Guardados:</span> <span className="text-white font-bold">{c.recurringDocs?.length || 0}</span></div>
-                                  </div>
-                              </div>
-                          ))}
-                      </div>
-                  ) : (
-                      <div className="flex flex-col items-center justify-center h-64 text-slate-500">
-                          <Icons.Building size={48} className="mb-4 opacity-50"/>
-                          <p>No tienes empresas registradas.</p>
-                      </div>
-                  )}
-              </div>
-          );
-      };
 
       const Workspace = ({ tender, onBack, apiKey, companies, showModal, showPrompt }) => {
           const [activeTab, setActiveTab] = useState(1); 
